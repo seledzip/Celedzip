@@ -104,9 +104,10 @@ def generate_post():
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
-    raw = response.content[0].text.strip()
-    raw = re.sub(r"^```json|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    data = json.loads(raw)
+       text_block = next((b for b in response.content if b.type == "text"), None)
+    if text_block is None:
+        raise RuntimeError("Claude 응답에서 텍스트 블록을 찾지 못했습니다.")
+    raw = text_block.text.strip()
 
     slug = slugify_english(data["slug_hint"])
 
