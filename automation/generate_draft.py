@@ -15,9 +15,9 @@ import datetime
 import requests
 from anthropic import Anthropic
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"].strip()
+TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
+TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 
 SITE_BASE = "https://seledzip.github.io/Celedzip"
 POSTS_DIR = "posts"
