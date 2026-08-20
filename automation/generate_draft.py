@@ -78,7 +78,7 @@ def generate_post():
 [요구사항]
 - 부업노트 사이트의 톤(직장인 대상 재테크/부업/절세 실전 정보)에 맞는 주제
 - 위 목록과 절대 겹치지 않는 새로운 주제
-- 아래 JSON 형식으로만 답하세요 (다른 텍스트 없이 JSON만):
+- 아래 JSON 형식으로만 답하세요 (다른 텍스트 없이 JSON만). 모든 문자열 값 안에는 실제 줄바꿈 문자를 넣지 말고 한 줄로 이어서 작성하세요:
 
 {{
   "slug_hint": "영문 소문자와 하이픈으로 된 파일명용 slug (예: side-income-example)",
@@ -100,7 +100,7 @@ def generate_post():
 
     response = client.messages.create(
         model="claude-sonnet-5",
-        max_tokens=2000,
+        max_tokens=4096,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
@@ -109,7 +109,7 @@ def generate_post():
         raise RuntimeError("Claude 응답에서 텍스트 블록을 찾지 못했습니다.")
     raw = text_block.text.strip()
     raw = re.sub(r"^```json|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    data = json.loads(raw)
+    data = json.loads(raw, strict=False)
 
     slug = slugify_english(data["slug_hint"])
 
