@@ -1,0 +1,8 @@
+name = "budeobnote-publish-bot"
+main = "index.js"
+compatibility_date = "2026-01-01"
+
+# 아래 secrets는 코드에 직접 쓰지 않고, 배포 후 아래 명령어로 등록합니다:
+#   wrangler secret put GITHUB_TOKEN
+#   wrangler secret put TELEGRAM_BOT_TOKEN
+#   wrangler secret put TELEGRAM_WEBHOOK_SECRET
