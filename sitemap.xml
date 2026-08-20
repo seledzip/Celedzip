@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<url>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/side-business-registration.html</loc>
     <lastmod>2026-08-08</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://seledzip.github.io/Celedzip/</loc>
     <lastmod>2026-08-08</lastmod>
@@ -48,13 +48,13 @@
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/ai-side-hustle-2026.html</loc>
     <lastmod>2026-08-08</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/talent-market-jobs.html</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
@@ -66,13 +66,13 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/side-job-company-rules.html</loc>
     <lastmod>2026-08-11</lastmod>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/smartstore-dropshipping.html</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
@@ -84,7 +84,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/data-labeling-side-job.html</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
@@ -96,7 +96,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/app-tech-comparison.html</loc>
     <lastmod>2026-08-14</lastmod>
     <changefreq>monthly</changefreq>
@@ -120,7 +120,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/side-income-health-insurance.html</loc>
     <lastmod>2026-08-15</lastmod>
     <changefreq>monthly</changefreq>
@@ -144,7 +144,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/side-income-necessary-expenses.html</loc>
     <lastmod>2026-08-17</lastmod>
     <changefreq>monthly</changefreq>
@@ -168,7 +168,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/side-income-unemployment-benefit.html</loc>
     <lastmod>2026-08-19</lastmod>
     <changefreq>monthly</changefreq>
@@ -198,7 +198,7 @@
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>
-    <url>
+  <url>
     <loc>https://seledzip.github.io/Celedzip/posts/product-review-side-job.html</loc>
     <lastmod>2026-08-20</lastmod>
     <changefreq>monthly</changefreq>
