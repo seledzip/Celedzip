@@ -98,18 +98,16 @@ def generate_post():
 
 참고로 이 글 안에 자연스럽게 링크를 하나 걸 예정입니다 (파일명: {link_fname}, 제목: "{link_title}"). h2_sections 중 하나의 본문에서 이 글을 언급할 문장을 자연스럽게 포함해주세요 (예: '앞서 다룬 OOO 글에서는...' 형태). 실제 <a> 태그는 제가 나중에 삽입할 것이니, 본문 텍스트에는 그냥 자연스러운 문장만 써주세요."""
 
-    response = client.messages.create(
+        response = client.messages.create(
         model="claude-sonnet-5",
         max_tokens=2000,
         system=system_prompt,
         messages=[{"role": "user", "content": user_prompt}],
     )
-       text_block = next((b for b in response.content if b.type == "text"), None)
+    text_block = next((b for b in response.content if b.type == "text"), None)
     if text_block is None:
         raise RuntimeError("Claude 응답에서 텍스트 블록을 찾지 못했습니다.")
-    raw = text_block.text.strip()
-
-    slug = slugify_english(data["slug_hint"])
+    raw = text_block.text.strip()    slug = slugify_english(data["slug_hint"])
 
     # h2 섹션 HTML 조립
     sections_html = ""
