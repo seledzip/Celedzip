@@ -1,0 +1,39 @@
+name: 부업노트 매일 초안 생성 및 텔레그램 전송
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  generate-draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 패키지 설치
+        run: pip install -r automation/requirements.txt
+
+      - name: 초안 생성 + 텔레그램 전송
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python automation/generate_draft.py
+
+      - name: 변경사항 커밋 및 푸시
+        run: |
+          git config user.name "부업노트 자동화 봇"
+          git config user.email "bot@seledzip.local"
+          git add drafts/
+          git diff --cached --quiet || git commit -m "새 초안 자동 생성"
+          git push
