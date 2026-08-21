@@ -2,6 +2,7 @@
 부업노트 자동 글감 생성 스크립트
 - posts/, drafts/ 폴더의 기존 글 제목을 읽어 겹치지 않는 새 주제를 Claude에게 정하게 함
 - 사이트 템플릿에 맞는 HTML을 생성해서 drafts/ 폴더에 저장
+- Replicate Flux-schnell로 대표 이미지 자동 생성 → images/posts/ 폴더에 저장
 - 텔레그램으로 미리보기 + [발행] 버튼 전송
 """
 
@@ -18,10 +19,12 @@ from anthropic import Anthropic
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"].strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
+REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
 
 SITE_BASE = "https://seledzip.github.io/Celedzip"
 POSTS_DIR = "posts"
 DRAFTS_DIR = "drafts"
+IMAGES_DIR = "images/posts"
 
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -62,6 +65,58 @@ def slugify_english(text_hint: str) -> str:
     return slug[:60]
 
 
+def generate_hero_image(slug: str, image_prompt: str) -> bool:
+    """Replicate Flux-schnell로 대표 이미지 생성 후 images/posts/{slug}.jpg 로 저장.
+    실패해도 전체 스크립트가 죽지 않도록 예외를 흡수하고 성공 여부만 반환."""
+    if not REPLICATE_API_TOKEN:
+        print("REPLICATE_API_TOKEN 없음 - 이미지 생성 건너뜀")
+        return False
+
+    try:
+        res = requests.post(
+            "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
+            headers={
+                "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+                "Content-Type": "application/json",
+                "Prefer": "wait=60",
+            },
+            json={
+                "input": {
+                    "prompt": image_prompt,
+                    "aspect_ratio": "16:9",
+                    "output_format": "jpg",
+                }
+            },
+            timeout=70,
+        )
+        res.raise_for_status()
+        data = res.json()
+
+        if data.get("status") != "succeeded":
+            print(f"이미지 생성 실패 (status={data.get('status')}): {data.get('error')}")
+            return False
+
+        output = data.get("output")
+        image_url = output[0] if isinstance(output, list) else output
+        if not image_url:
+            print("이미지 생성 응답에 output 없음")
+            return False
+
+        img_res = requests.get(image_url, timeout=30)
+        img_res.raise_for_status()
+
+        os.makedirs(IMAGES_DIR, exist_ok=True)
+        with open(f"{IMAGES_DIR}/{slug}.jpg", "wb") as f:
+            f.write(img_res.content)
+
+        print(f"이미지 생성 완료: {IMAGES_DIR}/{slug}.jpg")
+        return True
+
+    except Exception as e:
+        print(f"이미지 생성 중 오류 (무시하고 계속 진행): {e}")
+        return False
+
+
 def generate_post():
     existing_titles = get_existing_titles()
     link_fname, link_title = get_random_link_target()
@@ -87,6 +142,7 @@ def generate_post():
   "title": "글 제목 (브랜드명 없이, 30자 이내)",
   "meta_description": "메타 설명 (80~100자)",
   "read_minutes": 5,
+  "image_prompt": "글 주제를 표현하는 대표 이미지 설명을 영어로 작성. 미니멀하고 깔끔한 플랫 일러스트 스타일, 사람 얼굴/실사/특정 브랜드 로고 없이 사물과 아이콘 위주 구성. 블로그 히어로 이미지 용도.",
   "h2_sections": [
     {{"heading": "소제목1", "body": "본문 내용 (2~4문장, 존댓말)"}},
     {{"heading": "소제목2", "body": "본문 내용"}},
@@ -113,6 +169,17 @@ def generate_post():
     data = json.loads(raw, strict=False)
 
     slug = slugify_english(data["slug_hint"])
+
+    # 대표 이미지 생성 (실패해도 계속 진행)
+    has_image = generate_hero_image(slug, data.get("image_prompt", data["title"]))
+
+    hero_html = ""
+    if has_image:
+        hero_html = f"""
+    <div class="article-hero">
+      <img src="../images/posts/{slug}.jpg" alt="{data['title']}" loading="lazy">
+    </div>
+"""
 
     # h2 섹션 HTML 조립
     sections_html = ""
@@ -184,6 +251,7 @@ def generate_post():
       <a href="../index.html#calculator">수익 계산기</a>
       <a href="../about.html">소개</a>
       <a href="../disclosure.html">제휴 고지</a>
+      <a href="../contact.html">문의하기</a>
     </nav>
   </div>
 </header>
@@ -193,7 +261,7 @@ def generate_post():
     <p class="article-tag">{data['tag']}</p>
     <h1>{data['title']}</h1>
     <p class="byline">{today.replace('-', '.')} · 부업노트 편집팀</p>
-
+{hero_html}
     <div class="article-body">
 {sections_html}{callout_html}{list_html}
       <h2>정리</h2>
@@ -218,6 +286,7 @@ def generate_post():
           <li><a href="../about.html">소개</a></li>
           <li><a href="../disclosure.html">제휴 마케팅 고지</a></li>
           <li><a href="../privacy.html">개인정보처리방침</a></li>
+          <li><a href="../contact.html">문의하기</a></li>
         </ul>
       </div>
     </div>
