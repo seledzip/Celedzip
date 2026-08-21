@@ -1,6 +1,6 @@
 """
 부업노트 자동 글감 생성 스크립트
-- posts/ 폴더의 기존 글 제목을 읽어 겹치지 않는 새 주제를 Claude에게 정하게 함
+- posts/, drafts/ 폴더의 기존 글 제목을 읽어 겹치지 않는 새 주제를 Claude에게 정하게 함
 - 사이트 템플릿에 맞는 HTML을 생성해서 drafts/ 폴더에 저장
 - 텔레그램으로 미리보기 + [발행] 버튼 전송
 """
@@ -27,14 +27,15 @@ client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 
 def get_existing_titles():
-    """posts/ 폴더 안의 모든 글에서 <h1> 제목을 추출"""
+    """posts/ 및 drafts/ 폴더 안의 모든 글에서 <h1> 제목을 추출 (당일 중복 방지 포함)"""
     titles = []
-    for path in glob.glob(f"{POSTS_DIR}/*.html"):
-        with open(path, encoding="utf-8") as f:
-            content = f.read()
-        m = re.search(r"<h1>(.*?)</h1>", content, re.DOTALL)
-        if m:
-            titles.append(m.group(1).strip())
+    for folder in (POSTS_DIR, DRAFTS_DIR):
+        for path in glob.glob(f"{folder}/*.html"):
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+            m = re.search(r"<h1>(.*?)</h1>", content, re.DOTALL)
+            if m:
+                titles.append(m.group(1).strip())
     return titles
 
 
@@ -70,7 +71,7 @@ def generate_post():
 직장인 대상으로, 부업·재테크·절세·4대보험·계약 관련 실전 정보를 담백하고 정직한 톤으로 씁니다.
 과장된 수익 주장이나 확인 안 된 법적 사실을 단정적으로 말하지 않고, 애매한 기준은 '정확한 기준은 OO에서 확인하세요' 식으로 안내합니다."""
 
-    user_prompt = f"""아래는 이미 발행된 글 제목 목록입니다. 이 목록과 주제가 겹치지 않는 새로운 글 주제를 하나 정하고, 전체 글을 작성해주세요.
+    user_prompt = f"""아래는 이미 발행되었거나 발행 대기 중인 글 제목 목록입니다. 이 목록과 주제가 겹치지 않는 새로운 글 주제를 하나 정하고, 전체 글을 작성해주세요.
 
 [기존 글 제목 목록]
 {chr(10).join('- ' + t for t in existing_titles)}
