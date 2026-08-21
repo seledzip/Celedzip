@@ -12,6 +12,7 @@ import json
 import glob
 import random
 import string
+import time
 import datetime
 import requests
 from anthropic import Anthropic
@@ -67,19 +68,20 @@ def slugify_english(text_hint: str) -> str:
 
 def generate_hero_image(slug: str, image_prompt: str) -> bool:
     """Replicate Flux-schnell로 대표 이미지 생성 후 images/posts/{slug}.jpg 로 저장.
-    실패해도 전체 스크립트가 죽지 않도록 예외를 흡수하고 성공 여부만 반환."""
+    완료될 때까지 폴링하며, 실패해도 전체 스크립트가 죽지 않도록 예외를 흡수."""
     if not REPLICATE_API_TOKEN:
         print("REPLICATE_API_TOKEN 없음 - 이미지 생성 건너뜀")
         return False
 
+    headers = {
+        "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
     try:
         res = requests.post(
             "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-            headers={
-                "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
-                "Content-Type": "application/json",
-                "Prefer": "wait=60",
-            },
+            headers=headers,
             json={
                 "input": {
                     "prompt": image_prompt,
@@ -87,10 +89,21 @@ def generate_hero_image(slug: str, image_prompt: str) -> bool:
                     "output_format": "jpg",
                 }
             },
-            timeout=70,
+            timeout=30,
         )
         res.raise_for_status()
         data = res.json()
+
+        get_url = data["urls"]["get"]
+
+        # 완료될 때까지 폴링 (최대 약 90초)
+        for _ in range(45):
+            if data.get("status") in ("succeeded", "failed", "canceled"):
+                break
+            time.sleep(2)
+            poll_res = requests.get(get_url, headers=headers, timeout=30)
+            poll_res.raise_for_status()
+            data = poll_res.json()
 
         if data.get("status") != "succeeded":
             print(f"이미지 생성 실패 (status={data.get('status')}): {data.get('error')}")
