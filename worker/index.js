@@ -179,13 +179,13 @@ export default {
     }
 
     // (선택) 텔레그램 웹훅 시크릿 검증
-    if (env.TELEGRAM_WEBHOOK_SECRET) {
-      const header = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
-      if (header !== env.TELEGRAM_WEBHOOK_SECRET) {
+   if (env.TELEGRAM_WEBHOOK_SECRET) {
+      const header = (request.headers.get("X-Telegram-Bot-Api-Secret-Token") || "").trim();
+      const expected = env.TELEGRAM_WEBHOOK_SECRET.trim();
+      if (header !== expected) {
         return new Response("Forbidden", { status: 403 });
       }
     }
-
     const update = await request.json();
     const cq = update.callback_query;
 
