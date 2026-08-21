@@ -20,16 +20,17 @@ jobs:
           python-version: "3.11"
       - name: 패키지 설치
         run: pip install -r automation/requirements.txt
-      - name: 초안 생성 + 텔레그램 전송
+      - name: 초안 생성 + 이미지 생성 + 텔레그램 전송
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPLICATE_API_TOKEN: ${{ secrets.REPLICATE_API_TOKEN }}
         run: python automation/generate_draft.py
       - name: 변경사항 커밋 및 푸시
         run: |
           git config user.name "부업노트 자동화 봇"
           git config user.email "bot@seledzip.local"
-          git add drafts/
-          git diff --cached --quiet || git commit -m "새 초안 자동 생성"
+          git add drafts/ images/
+          git diff --cached --quiet || git commit -m "새 초안 + 이미지 자동 생성"
           git push
