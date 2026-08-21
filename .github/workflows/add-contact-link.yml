@@ -1,0 +1,65 @@
+name: 문의하기 링크 일괄 추가
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+jobs:
+  add-link:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v4
+      - name: Python 설치
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 문의하기 링크 일괄 삽입
+        run: |
+          python3 << 'EOF'
+          import os
+          import re
+
+          def process_file(path, prefix):
+              with open(path, encoding="utf-8") as f:
+                  content = f.read()
+
+              if 'href="' + prefix + 'contact.html"' in content:
+                  print(f"이미 있음 - 건너뜀: {path}")
+                  return
+
+              pattern = re.compile(
+                  r'(<a href="' + re.escape(prefix) + r'disclosure\.html">제휴 고지</a>)'
+              )
+              new_content, count = pattern.subn(
+                  r'\1\n      <a href="' + prefix + 'contact.html">문의하기</a>',
+                  content,
+                  count=1,
+              )
+
+              if count == 0:
+                  print(f"패턴 못 찾음 - 건너뜀: {path}")
+                  return
+
+              with open(path, "w", encoding="utf-8") as f:
+                  f.write(new_content)
+              print(f"추가 완료: {path}")
+
+          # 루트 레벨 html 파일들
+          root_files = ["index.html", "about.html", "disclosure.html", "privacy.html"]
+          for fname in root_files:
+              if os.path.exists(fname):
+                  process_file(fname, "")
+
+          # posts/ 폴더 안 모든 글
+          if os.path.isdir("posts"):
+              for fname in os.listdir("posts"):
+                  if fname.endswith(".html"):
+                      process_file(os.path.join("posts", fname), "../")
+          EOF
+      - name: 변경사항 커밋 및 푸시
+        run: |
+          git config user.name "부업노트 자동화 봇"
+          git config user.email "bot@seledzip.local"
+          git add -A
+          git diff --cached --quiet || git commit -m "전체 페이지에 문의하기 링크 추가"
+          git push
