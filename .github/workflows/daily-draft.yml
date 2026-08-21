@@ -31,6 +31,7 @@ jobs:
         run: |
           git config user.name "부업노트 자동화 봇"
           git config user.email "bot@seledzip.local"
-          git add drafts/ images/
+          git add drafts/
+          if [ -d images ]; then git add images/; fi
           git diff --cached --quiet || git commit -m "새 초안 + 이미지 자동 생성"
           git push
