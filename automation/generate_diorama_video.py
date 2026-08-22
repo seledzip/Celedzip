@@ -1,10 +1,10 @@
 """
-미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v3)
-- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 있는 반복 요소 + 훅 문구 + 씬별 자막 포함)
+미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v4)
+- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 요소 + 훅 문구 + 씬별 자막 + 배경음 프롬프트 포함)
 - 1번 씬만 Flux-schnell로 이미지 생성, 2번 씬부터는 이전 씬 영상의 마지막 프레임을 이어서 사용
-  (실제 프레임 연결로 씬 간 연속성 확보)
 - 씬마다 Kling 2.5 Turbo Pro로 이미지->영상 변환
-- ffmpeg로 씬 영상 이어붙이기 + 훅 문구(0~2.5초) + 씬별 자막(각 5초 구간) 자동 삽입
+- ffmpeg로 씬 영상 이어붙이기 + 훅 문구 + 씬별 자막 삽입
+- MusicGen으로 전체 길이에 맞는 배경음 생성 후 최종 믹싱
 - 완성된 영상을 텔레그램으로 전송 (유튜브 메타데이터 캡션 포함)
 """
 
@@ -24,7 +24,7 @@ REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
 TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
-FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
+FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"  # fonts-nanum 패키지에 실제 존재하는 파일명
 SCENE_DURATION = 5.0
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -54,10 +54,15 @@ def generate_scene_plan(topic: str) -> dict:
   이동/확대/회전한 결과"로 이어지는 자연스러운 다음 컷이어야 합니다.
 - 스토리는 명확한 기승전결(호기심 유발 → 세부 탐험 → 반전/클라이맥스 → 마무리)을 가져야 합니다.
 
-[자막 원칙]
+[온스크린 자막 원칙]
 - hook_text_ko: 영상 시작 2.5초 동안 화면에 나올 짧고 강렬한 한국어 문구 (15자 이내)
-- 각 씬의 caption_ko: 그 씬이 재생되는 5초 동안 화면 하단에 나올 짧은 한국어 자막
-  (12자 이내, 나레이션처럼 지금 보여지는 장면을 설명하거나 궁금증을 유발하는 문구)
+- 각 씬의 caption_ko: 그 씬이 재생되는 5초 동안 화면 하단에 나올 짧은 한국어 자막 (12자 이내)
+
+[배경음 원칙]
+- bgm_prompt_en: 영상 전체에 깔릴 배경 음악/분위기를 설명하는 영문 프롬프트.
+  장르, 악기, 템포, 무드를 구체적으로 명시 (예: "playful pizzicato strings, light percussion,
+  whimsical and cinematic, mid-tempo, family-friendly adventure feel"). 스토리의 기승전결에
+  어울리는 분위기로 만들되, 특정 저작권 있는 곡을 연상시키지 않는 오리지널한 설명으로 작성.
 
 [씬 설계 원칙]
 - 3~4개 씬으로 분할 (씬당 정확히 5초 - Kling 모델 제약)
@@ -72,6 +77,7 @@ def generate_scene_plan(topic: str) -> dict:
   "style_anchor": "전체 영상 공통 스타일 문구 (영문, 렌더/조명/색보정/렌즈)",
   "iconic_element_en": "모든 씬에 반복 등장할 귀엽고 개성있는 시그니처 요소 묘사 (영문)",
   "hook_text_ko": "영상 시작 2.5초 자막용 짧은 한국어 훅 문구 (15자 이내)",
+  "bgm_prompt_en": "영상 전체 배경음 설명 (영문)",
   "aspect_ratio": "9:16",
   "scenes": [
     {
@@ -127,7 +133,6 @@ def poll_until_done(data: dict, max_wait_sec: int = 90) -> dict:
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
-    """Flux-schnell로 이미지 생성 (오직 1번 씬에서만 사용), 이미지 URL 반환"""
     res = requests.post(
         "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
         headers=REPLICATE_HEADERS,
@@ -145,7 +150,6 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
 
 def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
                          aspect_ratio: str, index: int) -> str:
-    """Kling 2.5 Turbo Pro로 이미지->영상 변환. image_source는 URL 또는 data URI 둘 다 가능."""
     res = requests.post(
         "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
         headers=REPLICATE_HEADERS,
@@ -177,8 +181,43 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
     return clip_path
 
 
+def generate_bgm(prompt: str, duration_sec: int) -> str:
+    """MusicGen으로 배경음 생성, mp3 로컬 경로 반환. 실패해도 예외를 위로 던지지 않고 None 반환."""
+    try:
+        res = requests.post(
+            "https://api.replicate.com/v1/models/meta/musicgen/predictions",
+            headers=REPLICATE_HEADERS,
+            json={
+                "input": {
+                    "prompt": prompt,
+                    "model_version": "stereo-large",
+                    "duration": min(duration_sec, 30),
+                    "output_format": "mp3",
+                    "normalization_strategy": "peak",
+                }
+            },
+            timeout=30,
+        )
+        res.raise_for_status()
+        data = poll_until_done(res.json(), max_wait_sec=180)
+        output = data.get("output")
+        audio_url = output[0] if isinstance(output, list) else output
+        if not audio_url:
+            raise RuntimeError(f"배경음 생성 실패: {data}")
+
+        audio_res = requests.get(audio_url, timeout=60)
+        audio_res.raise_for_status()
+        bgm_path = f"{WORK_DIR}/bgm.mp3"
+        with open(bgm_path, "wb") as f:
+            f.write(audio_res.content)
+        print(f"배경음 생성 완료: {bgm_path}")
+        return bgm_path
+    except Exception as e:
+        print(f"배경음 생성 실패 (무시하고 무음으로 계속 진행): {e}")
+        return None
+
+
 def extract_last_frame(clip_path: str, index: int) -> str:
-    """영상 클립의 마지막 프레임을 이미지로 추출 (다음 씬의 시작 이미지로 사용)"""
     frame_path = f"{WORK_DIR}/last_frame_{index}.jpg"
     subprocess.run(
         ["ffmpeg", "-y", "-sseof", "-1", "-i", clip_path, "-update", "1", "-q:v", "2", frame_path],
@@ -195,13 +234,12 @@ def image_to_data_uri(image_path: str) -> str:
 
 
 def build_caption_segments(plan: dict) -> list:
-    """(자막 텍스트, 시작초, 끝초) 목록 생성. 훅 문구가 0~2.5초, 그 뒤로 씬별 자막이 이어짐."""
     segments = [(plan["hook_text_ko"], 0.0, 2.5)]
     for i, scene in enumerate(plan["scenes"]):
         start = i * SCENE_DURATION
         end = start + SCENE_DURATION
         if i == 0:
-            start = 2.5  # 훅 문구와 겹치지 않게 1번 씬 자막은 2.5초부터 시작
+            start = 2.5
         text = scene.get("caption_ko", "")
         if text:
             segments.append((text, start, end))
@@ -209,7 +247,7 @@ def build_caption_segments(plan: dict) -> list:
 
 
 def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
-    """ffmpeg로 씬 영상들을 이어붙이고, 훅 문구 + 씬별 자막을 순서대로 자동 삽입"""
+    """씬 영상 이어붙이기 + 자막 삽입 (아직 무음 상태의 영상)"""
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
     with open(concat_list_path, "w") as f:
         for path in clip_paths:
@@ -237,8 +275,33 @@ def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
 
     subprocess.run(
         ["ffmpeg", "-y", "-i", concatenated_path, "-vf", vf,
-         "-c:v", "libx264", "-c:a", "copy", "-pix_fmt", "yuv420p", output_path],
+         "-c:v", "libx264", "-pix_fmt", "yuv420p", output_path],
         check=True,
+        capture_output=True,
+    )
+
+
+def mux_audio(video_path: str, bgm_path: str, output_path: str):
+    """자막 입힌 무음 영상 + 배경음을 하나로 합치기"""
+    if not bgm_path:
+        # 배경음 생성 실패 시 무음 영상 그대로 사용
+        subprocess.run(["cp", video_path, output_path], check=True)
+        return
+
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-i", bgm_path,
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
+            "-shortest",
+            output_path,
+        ],
+        check=True,
+        capture_output=True,
     )
 
 
@@ -277,7 +340,7 @@ def send_telegram_message(text: str):
 
 def main():
     print(f"주제: {TOPIC}")
-    send_telegram_message(f"🎬 '{TOPIC}' 영상 제작을 시작합니다. 1~2분 정도 걸려요...")
+    send_telegram_message(f"🎬 '{TOPIC}' 영상 제작을 시작합니다. 자막+배경음까지 포함해서 3~5분 정도 걸려요...")
 
     plan = generate_scene_plan(TOPIC)
     print("씬 구성 완료:", json.dumps(plan, ensure_ascii=False, indent=2))
@@ -312,8 +375,15 @@ def main():
         print(f"씬 {idx} 영상 생성 완료: {clip_path}")
         clip_paths.append(clip_path)
 
+    captioned_path = f"{WORK_DIR}/captioned_video.mp4"
+    stitch_clips_with_captions(clip_paths, plan, captioned_path)
+    print("자막 삽입 완료")
+
+    total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
+    bgm_path = generate_bgm(plan["bgm_prompt_en"], total_duration)
+
     final_path = f"{WORK_DIR}/final_video.mp4"
-    stitch_clips_with_captions(clip_paths, plan, final_path)
+    mux_audio(captioned_path, bgm_path, final_path)
     print(f"최종 영상 완성: {final_path}")
 
     send_telegram_video(final_path, plan)
