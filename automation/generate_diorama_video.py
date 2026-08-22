@@ -1,5 +1,5 @@
 """
-글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v11 - Rate-Limit Safe Edition)
+글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v12 - Cost & Rate-Limit Optimized)
 """
 
 import os
@@ -25,17 +25,17 @@ REPLICATE_HEADERS = {
 
 
 def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
-    """429 Rate Limit 방지용 자동 재시도 함수"""
+    """429 방지용 지수 백오프 재시도"""
     for attempt in range(max_retries):
         res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
         if res.status_code == 429:
-            wait_time = (attempt + 1) * 15
-            print(f"⚠️ 429 대기 중... ({wait_time}초 후 재시도)")
+            wait_time = (attempt + 1) * 20
+            print(f"⚠️ 429 제한 발생: {wait_time}초 대기 후 재시도...")
             time.sleep(wait_time)
             continue
         res.raise_for_status()
         return res.json()
-    raise RuntimeError(f"최대 재시도 초과: {url}")
+    raise RuntimeError(f"최대 재시도 횟수 초과: {url}")
 
 
 def poll_until_done(data: dict, max_wait_sec: int = 300) -> dict:
@@ -49,12 +49,12 @@ def poll_until_done(data: dict, max_wait_sec: int = 300) -> dict:
         data = poll_res.json()
 
     if data.get("status") != "succeeded":
-        raise RuntimeError(f"Replicate 작업 실패 (status={data.get('status')}): {data.get('error')}")
+        raise RuntimeError(f"작업 실패 (status={data.get('status')}): {data.get('error')}")
     return data
 
 
 def generate_scene_plan(topic: str) -> dict:
-    prompt = f"""You are an elite sound designer & director for viral Miniature ASMR YouTube Shorts.
+    prompt = f"""You are a director for viral Miniature ASMR YouTube Shorts.
 Design a 4-scene rescue and satisfying transformation story for topic: "{topic}".
 
 Rules:
@@ -71,32 +71,28 @@ JSON Schema:
   "project_title": "Title in English",
   "style_anchor": "Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm lighting, 8k",
   "iconic_element_en": "description of tiny subject",
-  "bgm_prompt_en": "whimsical soft cozy acoustic pizzicato strings, relaxing lo-fi ASMR background music, 90 bpm",
+  "bgm_prompt_en": "crisp satisfying ASMR water sounds, gentle pouring trickle, relaxing acoustic marimba, peaceful ambient nature, 90 bpm",
   "aspect_ratio": "9:16",
   "scenes": [
     {{
       "scene_number": 1,
       "visual_prompt_en": "Macro shot of tiny cute clay characters struggling in dry cracked soil, tilt-shift lens",
-      "negative_prompt_en": "blurry, low quality, human face, text, watermark",
-      "sfx_prompt_en": "dry cracked earth, desert wind blowing"
+      "negative_prompt_en": "blurry, low quality, human face, text, watermark"
     }},
     {{
       "scene_number": 2,
       "visual_prompt_en": "A realistic giant human hand entering from top holding a tiny watering can over the scene",
-      "negative_prompt_en": "blurry, low quality, watermark, distortion",
-      "sfx_prompt_en": "gentle tool movement, soft air swoosh"
+      "negative_prompt_en": "blurry, low quality, watermark, distortion"
     }},
     {{
       "scene_number": 3,
       "visual_prompt_en": "Crystal clear water pouring onto miniature ground, soil turning rich and dark, rapid blooming of green sprouts",
-      "negative_prompt_en": "blurry, low quality, watermark",
-      "sfx_prompt_en": "crisp refreshing water pouring, liquid splash, water bubbles ASMR"
+      "negative_prompt_en": "blurry, low quality, watermark"
     }},
     {{
       "scene_number": 4,
       "visual_prompt_en": "Lush flourishing miniature garden, happy tiny characters jumping in joy under sunlight",
-      "negative_prompt_en": "blurry, low quality, watermark",
-      "sfx_prompt_en": "sparkling magic chime, fairy dust sound"
+      "negative_prompt_en": "blurry, low quality, watermark"
     }}
   ],
   "youtube_metadata": {{
@@ -113,7 +109,7 @@ JSON Schema:
                 "prompt": prompt,
                 "temperature": 0.3,
                 "max_tokens": 2048,
-                "system_prompt": "You are a specialized JSON generator. You only output valid parseable JSON objects."
+                "system_prompt": "You are a JSON generator. Output only valid JSON."
             }
         }
     )
@@ -143,8 +139,7 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
 
 def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
                          aspect_ratio: str, index: int) -> str:
-    # 요청 전 안전 딜레이
-    time.sleep(10)
+    time.sleep(15)  # 429 방지 안전 쿨다운
     data = post_with_retry(
         "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
         {
@@ -174,7 +169,7 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
 
 
 def generate_bgm(prompt: str, duration_sec: int) -> str:
-    print(f"🎵 ASMR 배경음악 생성: '{prompt}'")
+    print(f"🎵 ASMR BGM 생성: '{prompt}'")
     time.sleep(5)
     data = post_with_retry(
         "https://api.replicate.com/v1/models/meta/musicgen/predictions",
@@ -200,37 +195,6 @@ def generate_bgm(prompt: str, duration_sec: int) -> str:
     with open(bgm_path, "wb") as f:
         f.write(audio_res.content)
     return bgm_path
-
-
-def generate_sfx_clip(prompt: str, index: int) -> str:
-    """AudioLDM 안정화 호출 및 실패 시 고주파 ASMR 노이즈/무음 자동 폴백"""
-    print(f"🔊 씬 {index} 효과음 생성: '{prompt}'")
-    sfx_path = f"{WORK_DIR}/sfx_scene_{index}.wav"
-    try:
-        time.sleep(3)
-        data = post_with_retry(
-            "https://api.replicate.com/v1/models/lucataco/audioldm/predictions",
-            {"input": {"prompt": prompt, "duration": "5.0"}}
-        )
-        data = poll_until_done(data, max_wait_sec=90)
-        output = data.get("output")
-        sfx_url = output if isinstance(output, str) else (output[0] if isinstance(output, list) else None)
-        if sfx_url:
-            res = requests.get(sfx_url, timeout=60)
-            res.raise_for_status()
-            with open(sfx_path, "wb") as f:
-                f.write(res.content)
-            return sfx_path
-    except Exception as e:
-        print(f"⚠️ 씬 {index} 효과음 폴백 적용: {e}")
-
-    # 생성 실패 시 5초 무음 파일 생성하여 믹싱 유지
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "5", sfx_path],
-        check=True,
-        capture_output=True,
-    )
-    return sfx_path
 
 
 def extract_last_frame(clip_path: str, index: int) -> str:
@@ -263,44 +227,25 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
     )
 
 
-def stitch_sfx_tracks(sfx_paths: list, output_sfx_path: str):
-    sfx_list_path = f"{WORK_DIR}/sfx_concat_list.txt"
-    with open(sfx_list_path, "w") as f:
-        for path in sfx_paths:
-            f.write(f"file '{os.path.abspath(path)}'\n")
-
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", sfx_list_path,
-         "-c:a", "pcm_s16le", output_sfx_path],
-        check=True,
-        capture_output=True,
-    )
-
-
-def mux_multi_layer_audio(video_path: str, bgm_path: str, sfx_path: str, output_path: str):
-    filter_complex = (
-        "[1:a]volume=0.35[bgm];"
-        "[2:a]volume=1.2[sfx];"
-        "[bgm][sfx]amix=inputs=2:duration=longest[aout]"
-    )
+def mux_audio(video_path: str, bgm_path: str, output_path: str):
+    print("🎬 비디오 + ASMR 오디오 합성 진행...")
     subprocess.run(
         [
             "ffmpeg", "-y",
             "-i", video_path,
             "-i", bgm_path,
-            "-i", sfx_path,
-            "-filter_complex", filter_complex,
-            "-map", "0:v:0",
-            "-map", "[aout]",
             "-c:v", "copy",
             "-c:a", "aac",
             "-b:a", "192k",
+            "-map", "0:v:0",
+            "-map", "1:a:0",
             "-shortest",
             output_path,
         ],
         check=True,
         capture_output=True,
     )
+    print(f"✅ 오디오 합성 완료: {output_path}")
 
 
 def send_telegram_preview(video_path: str, plan: dict):
@@ -311,7 +256,7 @@ def send_telegram_preview(video_path: str, plan: dict):
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
-        f"🚀 *유튜브에 '일부공개'로 등록 중입니다...*"
+        f"🚀 *유튜브에 '일부공개'로 안전하게 등록 중입니다...*"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
@@ -335,7 +280,7 @@ def send_telegram_message(text: str):
 def main():
     print(f"Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
-    send_telegram_message(f"🎬 ASMR 미니어처 영상 제작 시작: '{TOPIC}' (예상 소요시간: ~6분)")
+    send_telegram_message(f"🎬 ASMR 미니어처 영상 제작 시작: '{TOPIC}'")
 
     plan = generate_scene_plan(TOPIC)
     
@@ -346,7 +291,6 @@ def main():
     style_anchor = plan["style_anchor"]
     iconic_element = plan["iconic_element_en"]
     clip_paths = []
-    sfx_paths = []
 
     for i, scene in enumerate(plan["scenes"]):
         idx = scene["scene_number"]
@@ -370,21 +314,14 @@ def main():
         )
         clip_paths.append(clip_path)
 
-        sfx_prompt = scene.get("sfx_prompt_en", "satisfying water pouring asmr sound")
-        sfx_clip = generate_sfx_clip(sfx_prompt, idx)
-        sfx_paths.append(sfx_clip)
-
     stitched_video_path = f"{WORK_DIR}/stitched_video.mp4"
     stitch_clips_clean(clip_paths, stitched_video_path)
-
-    stitched_sfx_path = f"{WORK_DIR}/stitched_sfx.wav"
-    stitch_sfx_tracks(sfx_paths, stitched_sfx_path)
 
     total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
     bgm_path = generate_bgm(plan["bgm_prompt_en"], total_duration)
 
     final_path = f"{WORK_DIR}/final_video.mp4"
-    mux_multi_layer_audio(stitched_video_path, bgm_path, stitched_sfx_path, final_path)
+    mux_audio(stitched_video_path, bgm_path, final_path)
 
     send_telegram_preview(final_path, plan)
     print("ASMR 최종 영상 전송 완료!")
