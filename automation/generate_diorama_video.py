@@ -1,7 +1,7 @@
 """
-글로벌 미니어처 ASMR 숏폼 자동화 스크립트 (v6 - Global Edition)
+글로벌 미니어처 ASMR 숏폼 자동화 스크립트 (v7 - Replicate LLM Engine)
+- Anthropic 의존성 제거 -> Replicate Meta Llama 3.3 70B로 씬 기획 생성
 - 화면 자막 없이 100% 비주얼 및 ASMR 중심 렌더링
-- Claude API: 글로벌 바이럴 영문 메타데이터 및 4단계 Rescue 서사 생성
 - Flux -> Kling 2.5 Turbo -> 마지막 프레임 연결
 - 무자막 영상 병합 + MusicGen ASMR 앰비언스 믹싱
 - 텔레그램 승인 메시지 전송 및 metadata.json 저장
@@ -14,9 +14,7 @@ import time
 import base64
 import subprocess
 import requests
-from anthropic import Anthropic
 
-ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"].strip()
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
 REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
@@ -24,82 +22,11 @@ TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
 SCENE_DURATION = 5.0
-client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 REPLICATE_HEADERS = {
     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
     "Content-Type": "application/json",
 }
-
-
-def generate_scene_plan(topic: str) -> dict:
-    system_prompt = """You are a world-class AI short-form director specializing in viral Miniature & Diorama ASMR shorts for a global audience (millions of views on YouTube Shorts / TikTok).
-
-Your goal is to design a satisfying, 4-scene miniature rescue story based on the user's topic.
-
-[Key Narrative Structure - Rescue & Satisfying Transformation]
-1. Scene 1 (The Crisis): A tiny, adorable clay miniature character or plant struggling in a harsh condition (dry cracked soil, frozen ice, broken tiny machine).
-2. Scene 2 (The Gentle Giant): A realistic giant human hand enters the frame from above carrying a miniature tool or water source.
-3. Scene 3 (Satisfying Action): Torrent of crystal-clear water pours, or magic repair happens, causing rapid satisfying transformation, plant blooming, or vibrant revival.
-4. Scene 4 (Joyful Finale): The miniature world is completely restored, vibrant and lush, with tiny characters celebrating happily.
-
-[Style Anchor - High-End Diorama Quality]
-"Hyper-detailed 3D miniature diorama, tilt-shift macro lens photography, cute claymation texture, miniature scale, warm soft cinematic lighting, 8k render, octane render, shallow depth of field, satisfying visual physics"
-
-[Prompt Requirements]
-- Exactly 4 scenes (5 seconds each).
-- Visual continuity: Environment established in Scene 1 carries seamlessly through Scene 4.
-- All titles, descriptions, and prompts must be strictly in ENGLISH for global reach.
-- BGM must be whimsical, relaxing ASMR style.
-
-Return ONLY a valid JSON object matching this schema:
-{
-  "project_title": "Project Title (EN)",
-  "style_anchor": "Global style prompt (EN)",
-  "iconic_element_en": "Description of the tiny character/plant in distress (EN)",
-  "bgm_prompt_en": "whimsical playful pizzicato strings, light marimba, cheerful cozy acoustic feeling, satisfying ASMR rhythm, 110 bpm",
-  "aspect_ratio": "9:16",
-  "scenes": [
-    {
-      "scene_number": 1,
-      "visual_prompt_en": "Macro shot of tiny cute clay characters struggling in dry cracked soil, tilt-shift, cute expressive faces",
-      "negative_prompt_en": "blurry, low quality, full human body, realistic human face, text, watermark"
-    },
-    {
-      "scene_number": 2,
-      "visual_prompt_en": "A realistic giant human hand entering from top holding a tiny watering can over the dry miniature scene",
-      "negative_prompt_en": "blurry, low quality, watermark, distortion"
-    },
-    {
-      "scene_number": 3,
-      "visual_prompt_en": "Crystal clear water pouring onto miniature ground, soil turning dark and rich, rapid blooming of tiny green sprouts",
-      "negative_prompt_en": "blurry, low quality, watermark"
-    },
-    {
-      "scene_number": 4,
-      "visual_prompt_en": "Lush flourishing miniature garden, ripe tiny crops, happy tiny characters jumping in joy under warm sunlight",
-      "negative_prompt_en": "blurry, low quality, watermark"
-    }
-  ],
-  "youtube_metadata": {
-    "title": "Viral Engaging English Title (under 60 chars, with emojis)",
-    "description": "Short engaging description for global viewers with keywords and hashtags",
-    "tags": ["miniature", "diorama", "asmr", "satisfying", "shorts", "claymation", "tinyworld"]
-  }
-}"""
-
-    response = client.messages.create(
-        model="claude-3-haiku-20240307",
-        max_tokens=4096,
-        system=system_prompt,
-        messages=[{"role": "user", "content": f"Topic: {topic}"}],
-    )
-    text_block = next((b for b in response.content if b.type == "text"), None)
-    if text_block is None:
-        raise RuntimeError("Claude response did not contain text.")
-    raw = text_block.text.strip()
-    raw = re.sub(r"^```json|```$", "", raw.strip(), flags=re.MULTILINE).strip()
-    return json.loads(raw, strict=False)
 
 
 def poll_until_done(data: dict, max_wait_sec: int = 180) -> dict:
@@ -113,8 +40,83 @@ def poll_until_done(data: dict, max_wait_sec: int = 180) -> dict:
         data = poll_res.json()
 
     if data.get("status") != "succeeded":
-        raise RuntimeError(f"Replicate task failed (status={data.get('status')}): {data.get('error')}")
+        raise RuntimeError(f"Replicate 작업 실패 (status={data.get('status')}): {data.get('error')}")
     return data
+
+
+def generate_scene_plan(topic: str) -> dict:
+    prompt = f"""You are a director for viral Miniature ASMR YouTube Shorts.
+Design a 4-scene rescue and satisfying transformation story for topic: "{topic}".
+
+Rules:
+- Exactly 4 scenes (5 seconds each).
+- Visual Style: Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm soft cinematic lighting, 8k, octane render, shallow depth of field.
+- Scene 1: Tiny cute character/object in distress.
+- Scene 2: Giant realistic human hand enters holding a tiny tool/water.
+- Scene 3: Satisfying action (pouring water, magic repair, rapid blooming).
+- Scene 4: Lush restored diorama, joyful tiny characters celebrating.
+- Strict JSON output only. No conversational text.
+
+JSON Schema:
+{{
+  "project_title": "Title in English",
+  "style_anchor": "Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm lighting, 8k",
+  "iconic_element_en": "description of tiny subject",
+  "bgm_prompt_en": "whimsical playful pizzicato strings, light marimba, cheerful cozy acoustic feeling, satisfying ASMR rhythm, 110 bpm",
+  "aspect_ratio": "9:16",
+  "scenes": [
+    {{
+      "scene_number": 1,
+      "visual_prompt_en": "Macro shot of tiny cute clay characters struggling in dry cracked soil, tilt-shift lens",
+      "negative_prompt_en": "blurry, low quality, human face, text, watermark"
+    }},
+    {{
+      "scene_number": 2,
+      "visual_prompt_en": "A realistic giant human hand entering from top holding a tiny watering can over the scene",
+      "negative_prompt_en": "blurry, low quality, watermark, distortion"
+    }},
+    {{
+      "scene_number": 3,
+      "visual_prompt_en": "Crystal clear water pouring onto miniature ground, soil turning dark, rapid blooming of green sprouts",
+      "negative_prompt_en": "blurry, low quality, watermark"
+    }},
+    {{
+      "scene_number": 4,
+      "visual_prompt_en": "Lush flourishing miniature garden, happy tiny characters jumping in joy under sunlight",
+      "negative_prompt_en": "blurry, low quality, watermark"
+    }}
+  ],
+  "youtube_metadata": {{
+    "title": "Viral Title with Emojis",
+    "description": "Engaging description with #Shorts #Miniature #ASMR",
+    "tags": ["miniature", "diorama", "asmr", "satisfying", "shorts", "claymation"]
+  }}
+}}"""
+
+    res = requests.post(
+        "https://api.replicate.com/v1/models/meta/meta-llama-3-70b-instruct/predictions",
+        headers=REPLICATE_HEADERS,
+        json={
+            "input": {
+                "prompt": prompt,
+                "temperature": 0.3,
+                "max_tokens": 2048,
+                "system_prompt": "You are a specialized JSON generator. You only output valid parseable JSON objects without markdown fences."
+            }
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+    data = poll_until_done(res.json(), max_wait_sec=120)
+    output = data.get("output")
+    raw_text = "".join(output) if isinstance(output, list) else str(output)
+    
+    # JSON 추출 및 파싱
+    raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
+    match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
+    if match:
+        raw_clean = match.group(0)
+    return json.loads(raw_clean, strict=False)
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
@@ -194,10 +196,10 @@ def generate_bgm(prompt: str, duration_sec: int) -> str:
         bgm_path = f"{WORK_DIR}/bgm.mp3"
         with open(bgm_path, "wb") as f:
             f.write(audio_res.content)
-        print(f"BGM generation complete: {bgm_path}")
+        print(f"BGM 생성 완료: {bgm_path}")
         return bgm_path
     except Exception as e:
-        print(f"Skipping BGM due to error: {e}")
+        print(f"BGM 생성 건너뜀: {e}")
         return None
 
 
@@ -261,7 +263,7 @@ def send_telegram_video(video_path: str, plan: dict):
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
-        f"👇 *Check the video below and approve for YouTube upload.*"
+        f"👇 *영상을 확인하시고 아래 버튼을 눌러 발행하세요.*"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
@@ -300,6 +302,7 @@ def main():
     send_telegram_message(f"🎬 Creating global ASMR miniature video for: '{TOPIC}' (Takes ~3-4 mins)")
 
     plan = generate_scene_plan(TOPIC)
+    print("Plan generated successfully:", json.dumps(plan, ensure_ascii=False, indent=2))
     
     with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
@@ -341,7 +344,7 @@ def main():
     mux_audio(stitched_video_path, bgm_path, final_path)
 
     send_telegram_video(final_path, plan)
-    print("Sent video to Telegram successfully!")
+    print("완료: 텔레그램 전송 성공!")
 
 
 if __name__ == "__main__":
