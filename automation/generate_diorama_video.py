@@ -1,5 +1,9 @@
 """
-글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v14 - Fully Verified & Fail-Safe)
+아기 환상종 구조 & 안식처 (Baby Fantasy Creature Sanctuary) 파이프라인 (v15)
+- 감정 몰입형 4단계 구조 서사 (위기 -> 구조 -> 케어/식사 -> 손바닥 침대 수면)
+- 초고화질 보송보송한 털/비늘 + 눈망울 질감 비주얼 앵커 고정
+- Replicate Llama 3 -> Flux Schnell -> Kling 2.5 Turbo Pro
+- FFmpeg 앰비언스 BGM 믹싱 + 텔레그램 미리보기 + 유튜브 자동 업로드 연동
 """
 
 import os
@@ -13,7 +17,7 @@ import requests
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
-TOPIC = os.environ.get("TOPIC", "Miniature rescue mission").strip()
+TOPIC = os.environ.get("TOPIC", "Rescuing a shivering baby storm dragon in the rain").strip()
 
 WORK_DIR = "video_work"
 SCENE_DURATION = 5.0
@@ -38,7 +42,7 @@ def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
         res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
         if res.status_code == 429:
             wait_time = (attempt + 1) * 20
-            print(f"⚠️ 429 제한 발생: {wait_time}초 대기 후 재시도...")
+            print(f"⚠️ 429 대기 중... ({wait_time}초 후 재시도)")
             time.sleep(wait_time)
             continue
         res.raise_for_status()
@@ -65,51 +69,51 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
 
 
 def generate_scene_plan(topic: str) -> dict:
-    prompt = f"""You are a director for viral Miniature ASMR YouTube Shorts.
-Design a 4-scene rescue and satisfying transformation story for topic: "{topic}".
+    prompt = f"""You are the director for a viral global YouTube Shorts series: 'Baby Fantasy Creature Sanctuary'.
+Design an emotional 4-scene rescue and healing story for: "{topic}".
 
 Rules:
 - Exactly 4 scenes (5 seconds each).
-- Visual Style: Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm soft cinematic lighting, 8k, octane render, shallow depth of field.
-- Scene 1: Tiny cute character/object in distress.
-- Scene 2: Giant realistic human hand enters holding a tiny tool/water.
-- Scene 3: Satisfying action (pouring crystal clear water, rapid blooming).
-- Scene 4: Lush restored diorama, joyful tiny characters celebrating.
+- Visual Style: Hyper-detailed 3D cinematic render, ultra-cute baby fantasy creature (baby dragon, mini griffin, or glowing spirit), huge glossy watery reflective eyes, soft fluffy fur or glowing translucent scales, tilt-shift macro lens, warm cozy cinematic lighting, 8k, photorealistic depth of field.
+- Scene 1: Heartbreaking crisis. Shivering, dirty baby creature with sad teary eyes trapped in harsh environment.
+- Scene 2: The Rescue. Gentle, realistic warm human hands entering with a soft towel, carefully lifting the tiny creature.
+- Scene 3: Satisfying Care ASMR. Cleaning away mud, wrapping in warmth, feeding a glowing magic berry.
+- Scene 4: Emotional Bond & Comfort. Clean, vibrant baby creature purring, gently nuzzling human finger, happily falling asleep in a palm-sized cozy bed.
 - Strict JSON output only.
 
 JSON Schema:
 {{
   "project_title": "Title in English",
-  "style_anchor": "Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm lighting, 8k",
-  "iconic_element_en": "description of tiny subject",
-  "bgm_prompt_en": "relaxing acoustic marimba and soft music box, gentle warm ambient melody, 90 bpm",
+  "style_anchor": "Hyper-detailed cinematic 3D render, adorable baby fantasy creature, huge glossy watery eyes, ultra-soft fluffy texture, warm dreamy lighting, 8k octane render, macro tilt-shift",
+  "iconic_element_en": "description of the specific baby creature",
+  "bgm_prompt_en": "gentle emotional acoustic guitar and music box, cozy warm lullaby ASMR vibe, 85 bpm",
   "aspect_ratio": "9:16",
   "scenes": [
     {{
       "scene_number": 1,
-      "visual_prompt_en": "Macro shot of tiny cute clay characters struggling in dry cracked soil, tilt-shift lens",
-      "negative_prompt_en": "blurry, low quality, human face, text, watermark"
+      "visual_prompt_en": "Extreme macro close-up of a tiny shivering baby creature with big teary eyes trapped in wet muddy ground",
+      "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark"
     }},
     {{
       "scene_number": 2,
-      "visual_prompt_en": "A realistic giant human hand entering from top holding a tiny watering can over the scene",
-      "negative_prompt_en": "blurry, low quality, watermark, distortion"
+      "visual_prompt_en": "Gentle realistic giant human hands wrapped in a soft warm towel gently scooping up the tiny baby creature",
+      "negative_prompt_en": "blurry, low quality, watermark, distortion, harsh lighting"
     }},
     {{
       "scene_number": 3,
-      "visual_prompt_en": "Crystal clear water pouring onto miniature ground, soil turning rich and dark, rapid blooming of green sprouts",
+      "visual_prompt_en": "Satisfying cleaning of the baby creature, drying fluffy fur, feeding a glowing magical tiny fruit",
       "negative_prompt_en": "blurry, low quality, watermark"
     }},
     {{
       "scene_number": 4,
-      "visual_prompt_en": "Lush flourishing miniature garden, happy tiny characters jumping in joy under sunlight",
+      "visual_prompt_en": "Happy fluffy baby creature glowing with joy, nuzzling a human finger, curling up to sleep in a cozy miniature bed",
       "negative_prompt_en": "blurry, low quality, watermark"
     }}
   ],
   "youtube_metadata": {{
-    "title": "Viral Title with Emojis",
-    "description": "Satisfying Miniature ASMR Rescue Mission #Shorts #Miniature #ASMR #Satisfying",
-    "tags": ["miniature", "diorama", "asmr", "satisfying", "shorts", "claymation"]
+    "title": "Viral Emotional Title with Emojis",
+    "description": "Saving a lost tiny baby fantasy creature! Welcome to the Sanctuary 🌿✨ #Shorts #BabyCreature #FantasyRescue #Cute #ASMR",
+    "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "satisfying", "shorts", "babydragon", "healing"]
   }}
 }}"""
 
@@ -150,7 +154,7 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
 
 def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
                          aspect_ratio: str, index: int) -> str:
-    time.sleep(15)  # 429 방지 안전 쿨다운
+    time.sleep(15)  # Rate-limit 방지
     data = post_with_retry(
         "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
         {
@@ -180,16 +184,16 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
 
 
 def generate_bgm(prompt: str, duration_sec: int) -> str:
-    print(f"🎵 ASMR 배경음 생성 시도: '{prompt}'")
+    print(f"🎵 포근한 힐링 앰비언스 오디오 생성...")
     bgm_path = f"{WORK_DIR}/bgm.mp3"
     
-    # 1. 고품질 앰비언스 오디오 생성 (포근한 ASMR 핑크 노이즈 + 잔잔한 톤)
+    # 432Hz 힐링 주파수 톤 + 부드러운 핑크 노이즈로 힐링 ASMR 사운드트랙 생성
     subprocess.run(
         [
             "ffmpeg", "-y",
-            "-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.04",
+            "-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.03",
             "-f", "lavfi", "-i", "sine=f=432:r=44100",
-            "-filter_complex", "[1:a]volume=0.02[tone];[0:a][tone]amix=inputs=2[out]",
+            "-filter_complex", "[1:a]volume=0.015[tone];[0:a][tone]amix=inputs=2[out]",
             "-map", "[out]",
             "-t", str(duration_sec),
             bgm_path
@@ -197,7 +201,7 @@ def generate_bgm(prompt: str, duration_sec: int) -> str:
         check=True,
         capture_output=True,
     )
-    print(f"✅ ASMR 전용 배경음 완성: {bgm_path}")
+    print(f"✅ ASMR 힐링 오디오 완성: {bgm_path}")
     return bgm_path
 
 
@@ -249,14 +253,14 @@ def mux_audio(video_path: str, bgm_path: str, output_path: str):
         check=True,
         capture_output=True,
     )
-    print(f"✅ 최종 비디오 합성 완료: {output_path}")
+    print(f"✅ 최종 영상 렌더링 완료: {output_path}")
 
 
 def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🎬 *[{plan['project_title']}] 영상 제작 완료!*\n\n"
+        f"🐾 *[{plan['project_title']}] 아기 환상종 구조 영상 도착!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -279,9 +283,10 @@ def send_telegram_preview(video_path: str, plan: dict):
 def main():
     print(f"Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
-    send_telegram_message(f"🎬 ASMR 미니어처 영상 제작 시작: '{TOPIC}'")
+    send_telegram_message(f"🐾 아기 환상종 구조 영상 제작 시작: '{TOPIC}'")
 
     plan = generate_scene_plan(TOPIC)
+    print("Plan generated successfully:", json.dumps(plan, ensure_ascii=False, indent=2))
     
     with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
@@ -296,7 +301,7 @@ def main():
         print(f"--- Processing Scene {idx} ---")
 
         full_prompt = f"{style_anchor}, featuring {iconic_element}, {scene['visual_prompt_en']}"
-        negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text")
+        negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text, scary")
 
         if i == 0:
             image_source = generate_image(full_prompt, negative_prompt, aspect_ratio)
@@ -323,7 +328,7 @@ def main():
     mux_audio(stitched_video_path, bgm_path, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("ASMR 최종 영상 전송 완료!")
+    print("🐾 아기 환상종 숏폼 완성 및 전송 완료!")
 
 
 if __name__ == "__main__":
