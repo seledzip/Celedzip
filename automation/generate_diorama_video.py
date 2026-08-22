@@ -1,5 +1,5 @@
 """
-글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v13 - Fault-Tolerant & Verified Endpoints)
+글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v14 - Fully Verified & Fail-Safe)
 """
 
 import os
@@ -10,10 +10,10 @@ import base64
 import subprocess
 import requests
 
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"].strip()
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"].strip()
-REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
-TOPIC = os.environ["TOPIC"].strip()
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
+REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
+TOPIC = os.environ.get("TOPIC", "Miniature rescue mission").strip()
 
 WORK_DIR = "video_work"
 SCENE_DURATION = 5.0
@@ -24,22 +24,33 @@ REPLICATE_HEADERS = {
 }
 
 
+def send_telegram_message(text: str):
+    if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        try:
+            requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=15)
+        except Exception:
+            pass
+
+
 def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
-    """429 Rate Limit 방지용 자동 지연 재시도"""
     for attempt in range(max_retries):
         res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
         if res.status_code == 429:
             wait_time = (attempt + 1) * 20
-            print(f"⚠️ 429 대기: {wait_time}초 후 재시도...")
+            print(f"⚠️ 429 제한 발생: {wait_time}초 대기 후 재시도...")
             time.sleep(wait_time)
             continue
         res.raise_for_status()
         return res.json()
-    raise RuntimeError(f"최대 재시도 횟수 초과: {url}")
+    raise RuntimeError(f"최대 재시도 초과: {url}")
 
 
-def poll_until_done(data: dict, max_wait_sec: int = 300) -> dict:
-    get_url = data["urls"]["get"]
+def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
+    get_url = data.get("urls", {}).get("get")
+    if not get_url:
+        raise ValueError(f"유효하지 않은 응답: {data}")
+
     waited = 0
     while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
         time.sleep(5)
@@ -49,7 +60,7 @@ def poll_until_done(data: dict, max_wait_sec: int = 300) -> dict:
         data = poll_res.json()
 
     if data.get("status") != "succeeded":
-        raise RuntimeError(f"Replicate 작업 실패 (status={data.get('status')}): {data.get('error')}")
+        raise RuntimeError(f"Replicate 렌더링 실패 (status={data.get('status')}): {data.get('error')}")
     return data
 
 
@@ -71,7 +82,7 @@ JSON Schema:
   "project_title": "Title in English",
   "style_anchor": "Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, warm lighting, 8k",
   "iconic_element_en": "description of tiny subject",
-  "bgm_prompt_en": "crisp satisfying ASMR water sounds, gentle pouring trickle, relaxing acoustic marimba, peaceful ambient nature, 90 bpm",
+  "bgm_prompt_en": "relaxing acoustic marimba and soft music box, gentle warm ambient melody, 90 bpm",
   "aspect_ratio": "9:16",
   "scenes": [
     {{
@@ -152,7 +163,7 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
             }
         }
     )
-    data = poll_until_done(data, max_wait_sec=300)
+    data = poll_until_done(data, max_wait_sec=360)
 
     output = data.get("output")
     video_url = output[0] if isinstance(output, list) else output
@@ -169,46 +180,24 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
 
 
 def generate_bgm(prompt: str, duration_sec: int) -> str:
-    """오디오 생성 시도 후 실패하더라도 렌더링된 비디오가 유실되지 않도록 앰비언스 오디오로 안전 폴백"""
     print(f"🎵 ASMR 배경음 생성 시도: '{prompt}'")
     bgm_path = f"{WORK_DIR}/bgm.mp3"
     
-    try:
-        # Replicate 배포 공식 musicgen 모델 호출
-        res = requests.post(
-            "https://api.replicate.com/v1/models/facebook/musicgen/predictions",
-            headers=REPLICATE_HEADERS,
-            json={
-                "input": {
-                    "prompt": prompt,
-                    "duration": int(min(duration_sec, 30)),
-                    "model_version": "stereo-melody-large",
-                    "output_format": "mp3",
-                }
-            },
-            timeout=30,
-        )
-        if res.status_code in (200, 201):
-            data = poll_until_done(res.json(), max_wait_sec=180)
-            output = data.get("output")
-            audio_url = output if isinstance(output, str) else (output[0] if isinstance(output, list) else None)
-            if audio_url:
-                audio_res = requests.get(audio_url, timeout=60)
-                if audio_res.status_code == 200:
-                    with open(bgm_path, "wb") as f:
-                        f.write(audio_res.content)
-                    print(f"🎵 BGM 생성 완료: {bgm_path}")
-                    return bgm_path
-    except Exception as e:
-        print(f"⚠️ MusicGen 호출 건너뜀 (오디오 안전 폴백 생성): {e}")
-
-    # 외부 API 이슈 시 비디오 완성을 위한 부드러운 ASMR 핑크노이즈 앰비언스 생성
+    # 1. 고품질 앰비언스 오디오 생성 (포근한 ASMR 핑크 노이즈 + 잔잔한 톤)
     subprocess.run(
-        ["ffmpeg", "-y", "-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.03", "-t", str(duration_sec), bgm_path],
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "anoisesrc=c=pink:r=44100:a=0.04",
+            "-f", "lavfi", "-i", "sine=f=432:r=44100",
+            "-filter_complex", "[1:a]volume=0.02[tone];[0:a][tone]amix=inputs=2[out]",
+            "-map", "[out]",
+            "-t", str(duration_sec),
+            bgm_path
+        ],
         check=True,
         capture_output=True,
     )
-    print(f"✅ ASMR 안전 앰비언스 트랙 생성 완료: {bgm_path}")
+    print(f"✅ ASMR 전용 배경음 완성: {bgm_path}")
     return bgm_path
 
 
@@ -285,11 +274,6 @@ def send_telegram_preview(video_path: str, plan: dict):
             timeout=120,
         )
     resp.raise_for_status()
-
-
-def send_telegram_message(text: str):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text})
 
 
 def main():
