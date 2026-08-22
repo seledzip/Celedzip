@@ -1,10 +1,10 @@
 """
-미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v2)
-- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 있는 반복 요소 + 온스크린 훅 문구 포함)
-- 1번 씬만 Flux-schnell로 이미지 생성, 2번 씬부터는 이전 씬 영상의 마지막 프레임을 그대로
-  이어서 사용 (실제 프레임 연결로 씬 간 연속성 확보)
+미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v3)
+- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 있는 반복 요소 + 훅 문구 + 씬별 자막 포함)
+- 1번 씬만 Flux-schnell로 이미지 생성, 2번 씬부터는 이전 씬 영상의 마지막 프레임을 이어서 사용
+  (실제 프레임 연결로 씬 간 연속성 확보)
 - 씬마다 Kling 2.5 Turbo Pro로 이미지->영상 변환
-- ffmpeg로 씬 영상 이어붙이기 + 첫 2.5초에 훅 문구 자막 삽입
+- ffmpeg로 씬 영상 이어붙이기 + 훅 문구(0~2.5초) + 씬별 자막(각 5초 구간) 자동 삽입
 - 완성된 영상을 텔레그램으로 전송 (유튜브 메타데이터 캡션 포함)
 """
 
@@ -25,6 +25,7 @@ TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
 FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicExtraBold.ttf"
+SCENE_DURATION = 5.0
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 REPLICATE_HEADERS = {
@@ -53,12 +54,13 @@ def generate_scene_plan(topic: str) -> dict:
   이동/확대/회전한 결과"로 이어지는 자연스러운 다음 컷이어야 합니다.
 - 스토리는 명확한 기승전결(호기심 유발 → 세부 탐험 → 반전/클라이맥스 → 마무리)을 가져야 합니다.
 
-[온스크린 훅 문구]
-영상 시작 2.5초 동안 화면에 자막으로 나올 짧은 한국어 문구(hook_text_ko)를 반드시 만듭니다.
-15자 이내로 짧고 강렬하게. 텔레그램 캡션이 아니라 실제 영상 위에 자막으로 박제됩니다.
+[자막 원칙]
+- hook_text_ko: 영상 시작 2.5초 동안 화면에 나올 짧고 강렬한 한국어 문구 (15자 이내)
+- 각 씬의 caption_ko: 그 씬이 재생되는 5초 동안 화면 하단에 나올 짧은 한국어 자막
+  (12자 이내, 나레이션처럼 지금 보여지는 장면을 설명하거나 궁금증을 유발하는 문구)
 
 [씬 설계 원칙]
-- 3~4개 씬으로 분할 (숏폼 15~20초 기준, 씬당 5초 - Kling 모델 제약으로 5초 고정)
+- 3~4개 씬으로 분할 (씬당 정확히 5초 - Kling 모델 제약)
 - 각 씬마다 dynamic camera move 중 하나를 명시: dolly in / dolly out / orbit / whip pan / slow push
 - 4K resolution, hyper-realistic 3D render 등 렌더 품질 키워드 포함
 - 네거티브 프롬프트(blurry, low quality, watermark, text, extra limbs, realistic human face 등) 별도 명시
@@ -75,12 +77,14 @@ def generate_scene_plan(topic: str) -> dict:
     {
       "scene_number": 1,
       "story_ko": "씬 스토리 설명 (한국어)",
+      "caption_ko": "이 씬 재생 중 화면에 나올 짧은 자막 (12자 이내, 한국어)",
       "visual_prompt_en": "1번 씬은 전체 장면을 설정하는 와이드 샷. 시각 묘사 + 카메라 워크 + 조명 + iconic_element 포함 (영문)",
       "negative_prompt_en": "제외할 요소 (영문)"
     },
     {
       "scene_number": 2,
       "story_ko": "1번 씬에서 카메라가 이동한 결과 이어지는 다음 컷 설명 (한국어)",
+      "caption_ko": "이 씬 재생 중 화면에 나올 짧은 자막 (12자 이내, 한국어)",
       "visual_prompt_en": "직전 프레임에서 카메라가 어떻게 움직여 무엇을 보여주는지 (영문, 카메라 워크 필수 포함)",
       "negative_prompt_en": "제외할 요소 (영문)"
     }
@@ -190,8 +194,22 @@ def image_to_data_uri(image_path: str) -> str:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def stitch_clips_with_hook(clip_paths: list, hook_text: str, output_path: str):
-    """ffmpeg로 씬 영상들을 이어붙이고, 맨 앞 2.5초에 훅 문구 자막을 삽입"""
+def build_caption_segments(plan: dict) -> list:
+    """(자막 텍스트, 시작초, 끝초) 목록 생성. 훅 문구가 0~2.5초, 그 뒤로 씬별 자막이 이어짐."""
+    segments = [(plan["hook_text_ko"], 0.0, 2.5)]
+    for i, scene in enumerate(plan["scenes"]):
+        start = i * SCENE_DURATION
+        end = start + SCENE_DURATION
+        if i == 0:
+            start = 2.5  # 훅 문구와 겹치지 않게 1번 씬 자막은 2.5초부터 시작
+        text = scene.get("caption_ko", "")
+        if text:
+            segments.append((text, start, end))
+    return segments
+
+
+def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
+    """ffmpeg로 씬 영상들을 이어붙이고, 훅 문구 + 씬별 자막을 순서대로 자동 삽입"""
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
     with open(concat_list_path, "w") as f:
         for path in clip_paths:
@@ -204,18 +222,21 @@ def stitch_clips_with_hook(clip_paths: list, hook_text: str, output_path: str):
         check=True,
     )
 
-    hook_text_path = f"{WORK_DIR}/hook_text.txt"
-    with open(hook_text_path, "w", encoding="utf-8") as f:
-        f.write(hook_text)
-
-    drawtext = (
-        f"drawtext=fontfile={FONT_PATH}:textfile={hook_text_path}:reload=1:"
-        f"fontcolor=white:fontsize=64:box=1:boxcolor=black@0.55:boxborderw=24:"
-        f"x=(w-text_w)/2:y=140:enable='between(t,0,2.5)'"
-    )
+    segments = build_caption_segments(plan)
+    filters = []
+    for idx, (text, start, end) in enumerate(segments):
+        text_path = f"{WORK_DIR}/caption_{idx}.txt"
+        with open(text_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        filters.append(
+            f"drawtext=fontfile={FONT_PATH}:textfile={text_path}:reload=1:"
+            f"fontcolor=white:fontsize=58:box=1:boxcolor=black@0.55:boxborderw=22:"
+            f"x=(w-text_w)/2:y=140:enable='between(t,{start},{end})'"
+        )
+    vf = ",".join(filters)
 
     subprocess.run(
-        ["ffmpeg", "-y", "-i", concatenated_path, "-vf", drawtext,
+        ["ffmpeg", "-y", "-i", concatenated_path, "-vf", vf,
          "-c:v", "libx264", "-c:a", "copy", "-pix_fmt", "yuv420p", output_path],
         check=True,
     )
@@ -292,7 +313,7 @@ def main():
         clip_paths.append(clip_path)
 
     final_path = f"{WORK_DIR}/final_video.mp4"
-    stitch_clips_with_hook(clip_paths, plan["hook_text_ko"], final_path)
+    stitch_clips_with_captions(clip_paths, plan, final_path)
     print(f"최종 영상 완성: {final_path}")
 
     send_telegram_video(final_path, plan)
