@@ -43,8 +43,8 @@ def upload_to_youtube():
 
     yt = plan["youtube_metadata"]
     title = yt.get("title", plan.get("project_title", "Miniature Shorts"))
-    description = f"{yt.get('description', '')}\n\n#Shorts #Miniature #Diorama"
-    tags = yt.get("tags", ["shorts", "miniature"])
+    description = f"{yt.get('description', '')}\n\n#Shorts #Miniature #Diorama #ASMR"
+    tags = yt.get("tags", ["shorts", "miniature", "asmr"])
 
     youtube = get_youtube_service()
 
@@ -56,7 +56,7 @@ def upload_to_youtube():
             "categoryId": "24",  # Entertainment
         },
         "status": {
-            "privacyStatus": "public",  # 또는 "unlisted" (일부공개로 먼저 확인 원할 시 변경 가능)
+            "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
         },
     }
@@ -68,20 +68,20 @@ def upload_to_youtube():
     while response is None:
         status, response = request.next_chunk()
         if status:
-            print(f"업로드 진행률: {int(status.progress() * 100)}%")
+            print(f"Upload progress: {int(status.progress() * 100)}%")
 
     video_id = response.get("id")
     video_url = f"https://youtube.com/shorts/{video_id}"
-    print(f"업로드 완료: {video_url}")
+    print(f"Upload success: {video_url}")
     
-    send_telegram(f"🎉 *유튜브 쇼츠 업로드 완료!*\n\n🔗 [영상 바로가기]({video_url})")
+    send_telegram(f"🎉 *YouTube Shorts Uploaded Successfully!*\n\n🔗 [Watch Video]({video_url})")
 
 
 if __name__ == "__main__":
     try:
         upload_to_youtube()
     except Exception as e:
-        msg = f"❌ 유튜브 업로드 실패: {e}"
+        msg = f"❌ YouTube upload failed: {e}"
         print(msg)
         send_telegram(msg)
         raise
