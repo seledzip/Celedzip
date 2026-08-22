@@ -1,2 +1,5 @@
-anthropic>=0.40.0
-requests>=2.31.0
+anthropic
+requests
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2
