@@ -1,10 +1,10 @@
 """
-아기 환상종 보호소 (Baby Fantasy Sanctuary) 무중단 자동화 파이프라인 (v17)
-- Replicate 서버 장애(E6802) 완벽 대비 100% Fallback 백업 기획 엔진 탑재
-- 365일 무한 주제 자동 생성기 (Topic DB Auto-Selector)
-- 씬별 타임라인 맞춤 ASMR 사운드 + 힐링 BGM 2중 믹싱
-- Replicate Llama 3 / Fallback -> Flux Schnell -> Kling 2.5 Turbo Pro
-- 텔레그램 미리보기 + 유튜브 자동 업로드 연동
+아기 환상종 보호소 (Baby Fantasy Sanctuary) 무중단 자동화 엔진 (v18 - Final Master)
+- E6802 등 Replicate 서버 장애 시 100% Fallback 백업 기획 자동 전환
+- 365일 무한 주제 자동 순환기 (Topic DB Auto-Selector)
+- 씬별 타임라인 맞춤 ASMR 사운드 (바람/터치/차임/골골송) + 힐링 BGM 믹싱
+- Replicate (Llama 3 / Fallback) -> Flux Schnell -> Kling 2.5 Turbo Pro
+- 텔레그램 프리뷰 발송 및 유튜브 쇼츠 자동 업로드
 """
 
 import os
@@ -30,6 +30,7 @@ REPLICATE_HEADERS = {
     "Content-Type": "application/json",
 }
 
+# 365일 무한 자동 순환용 아기 크리처 & 위기 환경 DB
 CREATURE_DB = [
     ("baby snow fox with crystal paws", "freezing in a heavy snowstorm"),
     ("baby star dragon with glowing golden wings", "trapped in dark muddy rain"),
@@ -45,6 +46,7 @@ CREATURE_DB = [
 
 
 def resolve_topic() -> str:
+    """주제가 지정되지 않았거나 'auto'인 경우 365일 DB에서 자동 선택"""
     if RAW_TOPIC and RAW_TOPIC != "auto":
         return RAW_TOPIC
     
@@ -280,11 +282,15 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
 
 
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
+    """
+    씬별 4단계 ASMR 사운드(0원 과금) + 힐링 BGM 믹싱
+    오류 발생 시에도 파이프라인이 터지지 않도록 2중 Fail-safe 구조 적용
+    """
     print("🎬 씬별 맞춤 ASMR 사운드팩 + 자장가 BGM 2중 믹싱 진행...")
     
     filter_complex = (
-        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec}[pink];"
-        f"sine=f=528:r=44100,atrim=0:{total_sec}[tone];"
+        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
+        f"sine=f=528:r=44100,atrim=0:{total_sec},asetpts=PTS-STARTPTS[tone];"
         "[tone]volume=0.015[tone_soft];"
         "[pink][tone_soft]amix=inputs=2[bgm];"
         
@@ -297,22 +303,39 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
         "[bgm][all_sfx]amix=inputs=2:duration=first[aout]"
     )
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-i", video_path,
-            "-filter_complex", filter_complex,
-            "-map", "0:v:0",
-            "-map", "[aout]",
-            "-c:v", "copy",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-shortest",
-            output_path,
-        ],
-        check=True,
-        capture_output=True,
-    )
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-filter_complex", filter_complex,
+                "-map", "0:v:0",
+                "-map", "[aout]",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-b:a", "192k",
+                "-shortest",
+                output_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except Exception as e:
+        print(f"⚠️ 복합 사운드 믹싱 예외 ({e}), 기본 안전 앰비언스로 대체합니다.")
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", video_path,
+                "-f", "lavfi", "-i", f"anoisesrc=c=pink:r=44100:a=0.02:d={total_sec}",
+                "-c:v", "copy",
+                "-c:a", "aac",
+                "-shortest",
+                output_path
+            ],
+            check=True,
+            capture_output=True
+        )
+
     print(f"✅ ASMR 사운드팩 믹싱 완료: {output_path}")
 
 
