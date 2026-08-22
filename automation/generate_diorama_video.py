@@ -1,8 +1,9 @@
 """
-아기 환상종 보호소 (Baby Fantasy Sanctuary) 365일 무인 자동화 엔진 (v16)
+아기 환상종 보호소 (Baby Fantasy Sanctuary) 무중단 자동화 파이프라인 (v17)
+- Replicate 서버 장애(E6802) 완벽 대비 100% Fallback 백업 기획 엔진 탑재
 - 365일 무한 주제 자동 생성기 (Topic DB Auto-Selector)
-- 씬별 타임라인 맞춤 ASMR 사운드 (낑낑거림/먹는소리/골골송) + 힐링 BGM 2중 믹싱
-- Replicate Llama 3 -> Flux Schnell -> Kling 2.5 Turbo Pro
+- 씬별 타임라인 맞춤 ASMR 사운드 + 힐링 BGM 2중 믹싱
+- Replicate Llama 3 / Fallback -> Flux Schnell -> Kling 2.5 Turbo Pro
 - 텔레그램 미리보기 + 유튜브 자동 업로드 연동
 """
 
@@ -29,7 +30,6 @@ REPLICATE_HEADERS = {
     "Content-Type": "application/json",
 }
 
-# 365일 무한 자동 순환용 아기 크리처 & 위기 환경 데이터베이스
 CREATURE_DB = [
     ("baby snow fox with crystal paws", "freezing in a heavy snowstorm"),
     ("baby star dragon with glowing golden wings", "trapped in dark muddy rain"),
@@ -45,7 +45,6 @@ CREATURE_DB = [
 
 
 def resolve_topic() -> str:
-    """주제가 직접 들어오지 않으면 날짜/시간 기반으로 365일 자동 주제 선택"""
     if RAW_TOPIC and RAW_TOPIC != "auto":
         return RAW_TOPIC
     
@@ -90,12 +89,51 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
         data = poll_res.json()
 
     if data.get("status") != "succeeded":
-        raise RuntimeError(f"Replicate 렌더링 실패: {data.get('error')}")
+        raise RuntimeError(f"Replicate 오류 (status={data.get('status')}): {data.get('error')}")
     return data
 
 
+def build_fallback_plan(topic: str) -> dict:
+    """Replicate LLM 장애 시 100% 무중단 가동을 위한 내장 기획 엔진"""
+    print("🛡️ 내장 Fallback 기획 엔진을 가동합니다.")
+    return {
+        "project_title": "Saving Lost Baby Fantasy Creature",
+        "style_anchor": "Hyper-detailed cinematic 3D render, ultra-cute adorable baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm dreamy lighting, 8k octane render",
+        "iconic_element_en": topic,
+        "aspect_ratio": "9:16",
+        "scenes": [
+            {
+                "scene_number": 1,
+                "visual_prompt_en": f"Extreme macro close-up of a tiny shivering baby creature with big teary eyes, {topic}, wet cold ground",
+                "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark"
+            },
+            {
+                "scene_number": 2,
+                "visual_prompt_en": "Gentle realistic giant warm human hands wrapped in a soft fluffy towel carefully scooping up the tiny baby creature",
+                "negative_prompt_en": "blurry, low quality, watermark, distortion, harsh lighting"
+            },
+            {
+                "scene_number": 3,
+                "visual_prompt_en": "Satisfying cleaning of the baby creature, drying fluffy fur, feeding a glowing magical tiny crystal fruit",
+                "negative_prompt_en": "blurry, low quality, watermark"
+            },
+            {
+                "scene_number": 4,
+                "visual_prompt_en": "Happy fluffy baby creature glowing with joy, nuzzling a human finger, sleeping peacefully in a cozy miniature bed",
+                "negative_prompt_en": "blurry, low quality, watermark"
+            }
+        ],
+        "youtube_metadata": {
+            "title": "Saving a Lost Baby Creature! 🐾✨ Cozy Healing ASMR",
+            "description": f"Rescuing a lost baby fantasy creature! Welcome to the Sanctuary 🌿✨\n\n🐾 What should we name this cute little one? Leave your idea in the comments!\n\n#Shorts #BabyCreature #FantasyRescue #Cute #ASMR #Satisfying",
+            "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "satisfying", "shorts", "healing", "cuteanimals"]
+        }
+    }
+
+
 def generate_scene_plan(topic: str) -> dict:
-    prompt = f"""You are the director for a viral global YouTube Shorts series: 'Baby Fantasy Creature Sanctuary'.
+    try:
+        prompt = f"""You are the director for a viral global YouTube Shorts series: 'Baby Fantasy Creature Sanctuary'.
 Design an emotional 4-scene rescue and healing story for: "{topic}".
 
 Rules:
@@ -142,26 +180,29 @@ JSON Schema:
   }}
 }}"""
 
-    data = post_with_retry(
-        "https://api.replicate.com/v1/models/meta/meta-llama-3-70b-instruct/predictions",
-        {
-            "input": {
-                "prompt": prompt,
-                "temperature": 0.3,
-                "max_tokens": 2048,
-                "system_prompt": "You are a JSON generator. Output only valid JSON."
+        data = post_with_retry(
+            "https://api.replicate.com/v1/models/meta/meta-llama-3-70b-instruct/predictions",
+            {
+                "input": {
+                    "prompt": prompt,
+                    "temperature": 0.3,
+                    "max_tokens": 2048,
+                    "system_prompt": "You are a JSON generator. Output only valid JSON."
+                }
             }
-        }
-    )
-    data = poll_until_done(data, max_wait_sec=120)
-    output = data.get("output")
-    raw_text = "".join(output) if isinstance(output, list) else str(output)
-    
-    raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
-    match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
-    if match:
-        raw_clean = match.group(0)
-    return json.loads(raw_clean, strict=False)
+        )
+        data = poll_until_done(data, max_wait_sec=60)
+        output = data.get("output")
+        raw_text = "".join(output) if isinstance(output, list) else str(output)
+        
+        raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
+        match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
+        if match:
+            raw_clean = match.group(0)
+        return json.loads(raw_clean, strict=False)
+    except Exception as e:
+        print(f"⚠️ Replicate LLM 응답 실패 ({e}). Fallback 백업 기획 모드로 전환합니다.")
+        return build_fallback_plan(topic)
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
@@ -239,39 +280,19 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
 
 
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
-    """
-    FFmpeg 내장 합성 엔진을 통해 0원 과금으로 씬별 4단계 ASMR 효과음 + 힐링 BGM 결합:
-    - 0~5초: 눈바람 소리 + 가냘픈 아기 소리 (S1)
-    - 5~10초: 부드러운 타월/담요 터치음 (S2)
-    - 10~15초: 마법 차임벨 + 오물오물 먹는 소리 (S3)
-    - 15~20초: 기분 좋은 골골송 톤 + 수면 힐링 BGM (S4)
-    """
     print("🎬 씬별 맞춤 ASMR 사운드팩 + 자장가 BGM 2중 믹싱 진행...")
     
     filter_complex = (
-        # 1. 20초 전체 힐링 BGM (432Hz 톤 + 핑크노이즈)
-        "anoisesrc=c=pink:r=44100:a=0.02[pink];"
-        "sine=f=528:r=44100[tone];"
+        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec}[pink];"
+        f"sine=f=528:r=44100,atrim=0:{total_sec}[tone];"
         "[tone]volume=0.015[tone_soft];"
         "[pink][tone_soft]amix=inputs=2[bgm];"
         
-        # 2. 씬 1 효과음 (0~5s): 바람 소리
-        "anoisesrc=c=brown:r=44100:a=0.04[wind_raw];"
-        "[wind_raw]atrim=0:5,asetpts=PTS-STARTPTS,afade=t=out:st=4:d=1[sfx1];"
+        "anoisesrc=c=brown:r=44100:a=0.04,atrim=0:5,asetpts=PTS-STARTPTS,afade=t=out:st=4:d=1[sfx1];"
+        "sine=f=300:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.01,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1[sfx2];"
+        "sine=f=880:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.025,afade=t=in:st=0:d=0.5,afade=t=out:st=4:d=1[sfx3];"
+        "sine=f=220:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.02,afade=t=in:st=0:d=1[sfx4];"
         
-        # 3. 씬 2 효과음 (5~10s): 부드러운 스위시
-        "sine=f=300:r=44100[sfx2_raw];"
-        "[sfx2_raw]atrim=0:5,asetpts=PTS-STARTPTS,volume=0.01,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1[sfx2];"
-        
-        # 4. 씬 3 효과음 (10~15s): 영롱한 마법 차임
-        "sine=f=880:r=44100[sfx3_raw];"
-        "[sfx3_raw]atrim=0:5,asetpts=PTS-STARTPTS,volume=0.025,afade=t=in:st=0:d=0.5,afade=t=out:st=4:d=1[sfx3];"
-        
-        # 5. 씬 4 효과음 (15~20s): 따뜻한 골골송 앰비언스
-        "sine=f=220:r=44100[sfx4_raw];"
-        "[sfx4_raw]atrim=0:5,asetpts=PTS-STARTPTS,volume=0.02,afade=t=in:st=0:d=1[sfx4];"
-        
-        # 6. 모든 오디오 트랙을 시간순으로 결합
         "[sfx1][sfx2][sfx3][sfx4]concat=n=4:v=0:a=1[all_sfx];"
         "[bgm][all_sfx]amix=inputs=2:duration=first[aout]"
     )
