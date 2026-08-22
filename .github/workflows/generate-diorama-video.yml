@@ -19,8 +19,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: ffmpeg 설치
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: ffmpeg 및 한글 폰트 설치
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-nanum
       - name: 패키지 설치
         run: pip install -r automation/requirements.txt
       - name: 영상 생성 + 텔레그램 전송
