@@ -1,11 +1,10 @@
 """
-미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v4)
-- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 요소 + 훅 문구 + 씬별 자막 + 배경음 프롬프트 포함)
-- 1번 씬만 Flux-schnell로 이미지 생성, 2번 씬부터는 이전 씬 영상의 마지막 프레임을 이어서 사용
-- 씬마다 Kling 2.5 Turbo Pro로 이미지->영상 변환
-- ffmpeg로 씬 영상 이어붙이기 + 훅 문구 + 씬별 자막 삽입
-- MusicGen으로 전체 길이에 맞는 배경음 생성 후 최종 믹싱
-- 완성된 영상을 텔레그램으로 전송 (유튜브 메타데이터 캡션 포함)
+미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v5)
+- Claude API로 바이럴 미니어처 서사(위기 -> 거인의 손 등장 -> 극적 해결 -> 해피엔딩) 생성
+- Flux-schnell 첫 씬 생성 -> Kling 2.5 I2V -> 마지막 프레임 루프
+- ffmpeg 자막 + MusicGen BGM 믹싱
+- 유튜브 업로드용 메타데이터 JSON 저장
+- 텔레그램으로 영상과 인라인 승인 버튼 전송
 """
 
 import os
@@ -24,7 +23,7 @@ REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
 TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
-FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"  # fonts-nanum 패키지에 실제 존재하는 파일명
+FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
 SCENE_DURATION = 5.0
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
@@ -35,76 +34,79 @@ REPLICATE_HEADERS = {
 
 
 def generate_scene_plan(topic: str) -> dict:
-    system_prompt = """당신은 AI 영상 제작 플랫폼(Higgsfield Seedance 2.0 / Runway / Kling 등)과
-유튜브 쇼츠 최적화를 동시에 다루는 자동화 엔지니어입니다.
-사용자가 주제를 입력하면, 연속성 있는 하나의 스토리로 이어지는 미니어처/디오라마
-시네마틱 숏폼 영상을 설계합니다.
+    system_prompt = """당신은 수백만 조회수를 기록하는 미니어처 ASMR 숏폼(Miniature Rescue / Satisfying Diorama) 전문 크리에이터입니다.
+사용자가 주제를 입력하면, 틱톡/유튜브 쇼츠에서 바이럴되는 '귀여운 미니어처 캐릭터의 위기 극복 및 힐링 스토리'를 설계합니다.
 
-[가장 중요한 원칙 - 개성]
-단순히 사실적인 미니어처를 재현하는 것으로는 부족합니다. 사람들이 저장하고 공유하고 싶어할
-만큼 귀엽거나, 유머러스하거나, 독특한 "시그니처 요소"가 반드시 하나 있어야 합니다.
-예: 표정이 있는 작은 피규어, 엉뚱한 소품, 과장된 색감의 마스코트 오브젝트 등.
-이 시그니처 요소는 iconic_element_en 필드에 명확히 정의하고, 모든 씬에 계속 등장시킵니다.
+[스토리텔링 필수 4단계 공식 - Rescue & Satisfying Structure]
+1. 씬 1 (위기/곤경): 아주 작고 귀여운 미니어처 캐릭터가 곤경에 처함 (가뭄, 추위, 고장, 배고픔 등).
+2. 씬 2 (도움의 손길 등장): 거대한 사람의 손(Realistic giant human hand)이나 신비한 도구가 나타나 도움을 주기 시작함.
+3. 씬 3 (극적인 변화/카타르시스): 물이 쏟아지거나 마법처럼 문제가 해결되며 폭발적인 시각적 만족감(Satisfying growth, clean up)을 줌.
+4. 씬 4 (행복한 결말): 풍요롭고 완벽해진 미니어처 세상에서 캐릭터들이 기뻐하며 마무리.
 
-[연속성 원칙 - 매우 중요]
-이 영상은 하나의 연속된 롱테이크처럼 느껴져야 합니다. 각 씬은 별개의 장면이 아니라,
-카메라가 계속 움직이거나 파고들면서 같은 공간/피사체를 탐험하는 하나의 흐름입니다.
-- 1번 씬에서 설정한 공간과 시그니처 요소가 마지막 씬까지 시각적으로 계속 이어져야 합니다.
-- 각 씬의 visual_prompt_en은 "완전히 새로운 장면"이 아니라 "직전 장면에서 카메라가
-  이동/확대/회전한 결과"로 이어지는 자연스러운 다음 컷이어야 합니다.
-- 스토리는 명확한 기승전결(호기심 유발 → 세부 탐험 → 반전/클라이맥스 → 마무리)을 가져야 합니다.
-
-[온스크린 자막 원칙]
-- hook_text_ko: 영상 시작 2.5초 동안 화면에 나올 짧고 강렬한 한국어 문구 (15자 이내)
-- 각 씬의 caption_ko: 그 씬이 재생되는 5초 동안 화면 하단에 나올 짧은 한국어 자막 (12자 이내)
-
-[배경음 원칙]
-- bgm_prompt_en: 영상 전체에 깔릴 배경 음악/분위기를 설명하는 영문 프롬프트.
-  장르, 악기, 템포, 무드를 구체적으로 명시 (예: "playful pizzicato strings, light percussion,
-  whimsical and cinematic, mid-tempo, family-friendly adventure feel"). 스토리의 기승전결에
-  어울리는 분위기로 만들되, 특정 저작권 있는 곡을 연상시키지 않는 오리지널한 설명으로 작성.
+[스타일 앵커 원칙 (style_anchor)]
+반드시 아래 키워드를 기본으로 조합하세요:
+"Hyper-detailed 3D miniature diorama, tilt-shift macro photography, cute claymation texture, miniature scale, warm soft cinematic lighting, 8k render, octane render, shallow depth of field"
 
 [씬 설계 원칙]
-- 3~4개 씬으로 분할 (씬당 정확히 5초 - Kling 모델 제약)
-- 각 씬마다 dynamic camera move 중 하나를 명시: dolly in / dolly out / orbit / whip pan / slow push
-- 4K resolution, hyper-realistic 3D render 등 렌더 품질 키워드 포함
-- 네거티브 프롬프트(blurry, low quality, watermark, text, extra limbs, realistic human face 등) 별도 명시
+- 정확히 4개 씬으로 분할 (씬당 정확히 5초)
+- 1번 씬의 디오라마 환경이 4번 씬까지 연속적으로 유지되어야 합니다.
+- 2~3번 씬에는 'giant human hand'의 물리적 상호작용(물 붓기, 씨앗 심기, 수리 등)을 명시하세요.
 
-반드시 아래 JSON 구조로만 응답하세요 (다른 텍스트 없이 JSON만, 모든 문자열은 줄바꿈 없이 한 줄로):
+[온스크린 자막 원칙]
+- hook_text_ko: 1번 씬의 위기를 강조하는 한국어 훅 (15자 이내, 예: "말라죽기 직전의 미니 농장?!")
+- caption_ko: 각 씬의 상황을 직관적으로 보여주는 짧은 문구 (10자 이내)
 
+[배경음 원칙]
+- bgm_prompt_en: ASMR에 어울리는 경쾌하고 따뜻한 피치카토/어쿠스틱 무드 ("whimsical playful pizzicato strings, light marimba, cheerful cozy acoustic feeling, satisfying ASMR rhythm, 110 bpm")
+
+반드시 아래 JSON 구조로만 응답하세요 (JSON 마크다운 외 다른 설명 금지):
 {
   "project_title": "주제명",
-  "style_anchor": "전체 영상 공통 스타일 문구 (영문, 렌더/조명/색보정/렌즈)",
-  "iconic_element_en": "모든 씬에 반복 등장할 귀엽고 개성있는 시그니처 요소 묘사 (영문)",
-  "hook_text_ko": "영상 시작 2.5초 자막용 짧은 한국어 훅 문구 (15자 이내)",
-  "bgm_prompt_en": "영상 전체 배경음 설명 (영문)",
+  "style_anchor": "전체 영상 공통 미니어처 스타일 문구 (영문)",
+  "iconic_element_en": "구조 대상이 되는 귀여운 미니어처 캐릭터/사물 묘사 (영문)",
+  "hook_text_ko": "영상 시작 2.5초 자막용 한국어 훅 (15자 이내)",
+  "bgm_prompt_en": "ASMR/경쾌한 배경음 설명 (영문)",
   "aspect_ratio": "9:16",
   "scenes": [
     {
       "scene_number": 1,
-      "story_ko": "씬 스토리 설명 (한국어)",
-      "caption_ko": "이 씬 재생 중 화면에 나올 짧은 자막 (12자 이내, 한국어)",
-      "visual_prompt_en": "1번 씬은 전체 장면을 설정하는 와이드 샷. 시각 묘사 + 카메라 워크 + 조명 + iconic_element 포함 (영문)",
-      "negative_prompt_en": "제외할 요소 (영문)"
+      "story_ko": "곤경에 처한 상황",
+      "caption_ko": "자막 1",
+      "visual_prompt_en": "Macro shot of tiny cute clay characters struggling in dry cracked soil farm, tilt-shift, cute expressive faces, miniature props",
+      "negative_prompt_en": "blurry, low quality, real human full body, realistic face, watermark"
     },
     {
       "scene_number": 2,
-      "story_ko": "1번 씬에서 카메라가 이동한 결과 이어지는 다음 컷 설명 (한국어)",
-      "caption_ko": "이 씬 재생 중 화면에 나올 짧은 자막 (12자 이내, 한국어)",
-      "visual_prompt_en": "직전 프레임에서 카메라가 어떻게 움직여 무엇을 보여주는지 (영문, 카메라 워크 필수 포함)",
-      "negative_prompt_en": "제외할 요소 (영문)"
+      "story_ko": "거인의 손 등장",
+      "caption_ko": "자막 2",
+      "visual_prompt_en": "A realistic giant human hand entering from top holding a watering can, preparing to pour water over the dry diorama",
+      "negative_prompt_en": "blurry, low quality, watermark, distortion"
+    },
+    {
+      "scene_number": 3,
+      "story_ko": "극적인 변화와 만족감",
+      "caption_ko": "자막 3",
+      "visual_prompt_en": "Crystal clear water pouring from watering can onto miniature crops, soil turning rich and moist, rapid magical plant growth",
+      "negative_prompt_en": "blurry, low quality, watermark"
+    },
+    {
+      "scene_number": 4,
+      "story_ko": "행복한 결말",
+      "caption_ko": "자막 4",
+      "visual_prompt_en": "Vibrant flourishing miniature green farm full of ripe tiny vegetables, tiny happy characters celebrating under warm sunlight, macro shot",
+      "negative_prompt_en": "blurry, low quality, watermark"
     }
   ],
   "youtube_metadata": {
-    "title": "후킹 제목 (60자 이내)",
-    "description": "영상 요약 2~3줄 + 주요 타임라인",
-    "tags": ["#태그1", "#태그2", "#쇼츠", "#AI영상"],
-    "shorts_hook": "첫 3초 시청자를 사로잡을 나레이션 문구"
+    "title": "후킹 제목",
+    "description": "영상 요약",
+    "tags": ["miniature", "diorama", "asmr", "satisfying", "shorts"],
+    "shorts_hook": "첫 3초 후킹 나레이션"
   }
 }"""
 
     response = client.messages.create(
-        model="claude-sonnet-5",
+        model="claude-3-5-sonnet-latest",
         max_tokens=4096,
         system=system_prompt,
         messages=[{"role": "user", "content": f"주제 입력: {topic}"}],
@@ -117,12 +119,12 @@ def generate_scene_plan(topic: str) -> dict:
     return json.loads(raw, strict=False)
 
 
-def poll_until_done(data: dict, max_wait_sec: int = 90) -> dict:
+def poll_until_done(data: dict, max_wait_sec: int = 180) -> dict:
     get_url = data["urls"]["get"]
     waited = 0
     while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
-        time.sleep(3)
-        waited += 3
+        time.sleep(4)
+        waited += 4
         poll_res = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=30)
         poll_res.raise_for_status()
         data = poll_res.json()
@@ -165,7 +167,7 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
         timeout=30,
     )
     res.raise_for_status()
-    data = poll_until_done(res.json(), max_wait_sec=240)
+    data = poll_until_done(res.json(), max_wait_sec=300)
 
     output = data.get("output")
     video_url = output[0] if isinstance(output, list) else output
@@ -182,7 +184,6 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
 
 
 def generate_bgm(prompt: str, duration_sec: int) -> str:
-    """MusicGen으로 배경음 생성, mp3 로컬 경로 반환. 실패해도 예외를 위로 던지지 않고 None 반환."""
     try:
         res = requests.post(
             "https://api.replicate.com/v1/models/meta/musicgen/predictions",
@@ -213,7 +214,7 @@ def generate_bgm(prompt: str, duration_sec: int) -> str:
         print(f"배경음 생성 완료: {bgm_path}")
         return bgm_path
     except Exception as e:
-        print(f"배경음 생성 실패 (무시하고 무음으로 계속 진행): {e}")
+        print(f"배경음 생성 건너뜀: {e}")
         return None
 
 
@@ -247,7 +248,6 @@ def build_caption_segments(plan: dict) -> list:
 
 
 def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
-    """씬 영상 이어붙이기 + 자막 삽입 (아직 무음 상태의 영상)"""
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
     with open(concat_list_path, "w") as f:
         for path in clip_paths:
@@ -268,7 +268,7 @@ def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
             f.write(text)
         filters.append(
             f"drawtext=fontfile={FONT_PATH}:textfile={text_path}:reload=1:"
-            f"fontcolor=white:fontsize=58:box=1:boxcolor=black@0.55:boxborderw=22:"
+            f"fontcolor=white:fontsize=56:box=1:boxcolor=black@0.55:boxborderw=20:"
             f"x=(w-text_w)/2:y=140:enable='between(t,{start},{end})'"
         )
     vf = ",".join(filters)
@@ -282,9 +282,7 @@ def stitch_clips_with_captions(clip_paths: list, plan: dict, output_path: str):
 
 
 def mux_audio(video_path: str, bgm_path: str, output_path: str):
-    """자막 입힌 무음 영상 + 배경음을 하나로 합치기"""
     if not bgm_path:
-        # 배경음 생성 실패 시 무음 영상 그대로 사용
         subprocess.run(["cp", video_path, output_path], check=True)
         return
 
@@ -307,30 +305,39 @@ def mux_audio(video_path: str, bgm_path: str, output_path: str):
 
 def send_telegram_video(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
-    tags = " ".join(yt.get("tags", []))
+    tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🎬 *{plan['project_title']}*\n\n"
-        f"*유튜브 제목*: {yt['title']}\n\n"
-        f"*설명*:\n{yt['description']}\n\n"
-        f"*훅 문구*: {yt['shorts_hook']}\n\n"
-        f"*태그*: {tags}"
+        f"🎬 *[{plan['project_title']}] 영상 생성 완료!*\n\n"
+        f"📌 *유튜브 제목*: {yt['title']}\n"
+        f"📝 *설명*: {yt['description']}\n"
+        f"🏷️ *태그*: {tags_str}\n\n"
+        f"👇 *영상을 확인하시고 발행을 승인해 주세요.*"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
+
+    # 유튜브 발행 승인 인라인 키보드
+    reply_markup = {
+        "inline_keyboard": [
+            [{"text": "🚀 유튜브 즉시 업로드 (발행)", "callback_data": "approve_upload"}],
+            [{"text": "❌ 발행 취소", "callback_data": "cancel_upload"}]
+        ]
+    }
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
     with open(video_path, "rb") as f:
         resp = requests.post(
             url,
-            data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "Markdown"},
+            data={
+                "chat_id": TELEGRAM_CHAT_ID,
+                "caption": caption,
+                "parse_mode": "Markdown",
+                "reply_markup": json.dumps(reply_markup)
+            },
             files={"video": f},
             timeout=120,
         )
     resp.raise_for_status()
-    result = resp.json()
-    print("텔레그램 전송 결과:", result)
-    if not result.get("ok"):
-        raise RuntimeError(f"텔레그램 전송 실패: {result}")
 
 
 def send_telegram_message(text: str):
@@ -340,10 +347,14 @@ def send_telegram_message(text: str):
 
 def main():
     print(f"주제: {TOPIC}")
-    send_telegram_message(f"🎬 '{TOPIC}' 영상 제작을 시작합니다. 자막+배경음까지 포함해서 3~5분 정도 걸려요...")
+    os.makedirs(WORK_DIR, exist_ok=True)
+    send_telegram_message(f"🎬 '{TOPIC}' 미니어처 영상 제작을 시작합니다! (약 3~4분 소요)")
 
     plan = generate_scene_plan(TOPIC)
-    print("씬 구성 완료:", json.dumps(plan, ensure_ascii=False, indent=2))
+    
+    # 유튜브 업로드 모듈에서 사용할 메타데이터 저장
+    with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
+        json.dump(plan, f, ensure_ascii=False, indent=2)
 
     aspect_ratio = plan.get("aspect_ratio", "9:16")
     style_anchor = plan["style_anchor"]
@@ -352,18 +363,16 @@ def main():
 
     for i, scene in enumerate(plan["scenes"]):
         idx = scene["scene_number"]
-        print(f"--- 씬 {idx} 처리 시작 ---")
+        print(f"--- 씬 {idx} 생성 시작 ---")
 
         full_prompt = f"{style_anchor}, featuring {iconic_element}, {scene['visual_prompt_en']}"
         negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text")
 
         if i == 0:
             image_source = generate_image(full_prompt, negative_prompt, aspect_ratio)
-            print(f"씬 {idx} 이미지 생성 완료 (Flux)")
         else:
             frame_path = extract_last_frame(clip_paths[-1], idx)
             image_source = image_to_data_uri(frame_path)
-            print(f"씬 {idx} 시작 이미지 = 이전 씬 마지막 프레임")
 
         clip_path = generate_video_clip(
             image_source=image_source,
@@ -372,22 +381,19 @@ def main():
             aspect_ratio=aspect_ratio,
             index=idx,
         )
-        print(f"씬 {idx} 영상 생성 완료: {clip_path}")
         clip_paths.append(clip_path)
 
     captioned_path = f"{WORK_DIR}/captioned_video.mp4"
     stitch_clips_with_captions(clip_paths, plan, captioned_path)
-    print("자막 삽입 완료")
 
     total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
     bgm_path = generate_bgm(plan["bgm_prompt_en"], total_duration)
 
     final_path = f"{WORK_DIR}/final_video.mp4"
     mux_audio(captioned_path, bgm_path, final_path)
-    print(f"최종 영상 완성: {final_path}")
 
     send_telegram_video(final_path, plan)
-    print("완료!")
+    print("텔레그램 전송 완료!")
 
 
 if __name__ == "__main__":
