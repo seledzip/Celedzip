@@ -1,9 +1,10 @@
 """
-미니어처/디오라마 시네마틱 영상 자동화 스크립트
-- 주제 입력 → Claude API로 씬 구성(JSON) 생성
-- 씬마다 Flux-schnell로 이미지 생성
+미니어처/디오라마 시네마틱 영상 자동화 스크립트 (v2)
+- 주제 입력 → Claude API로 씬 구성(JSON) 생성 (개성 있는 반복 요소 + 온스크린 훅 문구 포함)
+- 1번 씬만 Flux-schnell로 이미지 생성, 2번 씬부터는 이전 씬 영상의 마지막 프레임을 그대로
+  이어서 사용 (실제 프레임 연결로 씬 간 연속성 확보)
 - 씬마다 Kling 2.5 Turbo Pro로 이미지->영상 변환
-- ffmpeg로 씬 영상 이어붙이기
+- ffmpeg로 씬 영상 이어붙이기 + 첫 2.5초에 훅 문구 자막 삽입
 - 완성된 영상을 텔레그램으로 전송 (유튜브 메타데이터 캡션 포함)
 """
 
@@ -11,6 +12,7 @@ import os
 import re
 import json
 import time
+import base64
 import subprocess
 import requests
 from anthropic import Anthropic
@@ -22,6 +24,7 @@ REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
 TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
+FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicExtraBold.ttf"
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
 REPLICATE_HEADERS = {
@@ -33,46 +36,60 @@ REPLICATE_HEADERS = {
 def generate_scene_plan(topic: str) -> dict:
     system_prompt = """당신은 AI 영상 제작 플랫폼(Higgsfield Seedance 2.0 / Runway / Kling 등)과
 유튜브 쇼츠 최적화를 동시에 다루는 자동화 엔지니어입니다.
-사용자가 주제를 입력하면, 멀티씬 영상 제작에 필요한 전체 프롬프트 세트와
-유튜브 업로드 메타데이터를 하나의 JSON으로 생성합니다.
+사용자가 주제를 입력하면, 연속성 있는 하나의 스토리로 이어지는 미니어처/디오라마
+시네마틱 숏폼 영상을 설계합니다.
 
-[일관성 원칙]
-- 전체 영상에 걸쳐 통일할 스타일 앵커(렌더 스타일, 조명, 색보정, 카메라 렌즈감)를
-  먼저 정의하고, 모든 씬의 visual_prompt에 동일하게 포함시킨다.
-- 씬 간 연결은 카메라 워크나 피사체의 연속성으로 자연스럽게 이어지게 설계한다.
+[가장 중요한 원칙 - 개성]
+단순히 사실적인 미니어처를 재현하는 것으로는 부족합니다. 사람들이 저장하고 공유하고 싶어할
+만큼 귀엽거나, 유머러스하거나, 독특한 "시그니처 요소"가 반드시 하나 있어야 합니다.
+예: 표정이 있는 작은 피규어, 엉뚱한 소품, 과장된 색감의 마스코트 오브젝트 등.
+이 시그니처 요소는 iconic_element_en 필드에 명확히 정의하고, 모든 씬에 계속 등장시킵니다.
+
+[연속성 원칙 - 매우 중요]
+이 영상은 하나의 연속된 롱테이크처럼 느껴져야 합니다. 각 씬은 별개의 장면이 아니라,
+카메라가 계속 움직이거나 파고들면서 같은 공간/피사체를 탐험하는 하나의 흐름입니다.
+- 1번 씬에서 설정한 공간과 시그니처 요소가 마지막 씬까지 시각적으로 계속 이어져야 합니다.
+- 각 씬의 visual_prompt_en은 "완전히 새로운 장면"이 아니라 "직전 장면에서 카메라가
+  이동/확대/회전한 결과"로 이어지는 자연스러운 다음 컷이어야 합니다.
+- 스토리는 명확한 기승전결(호기심 유발 → 세부 탐험 → 반전/클라이맥스 → 마무리)을 가져야 합니다.
+
+[온스크린 훅 문구]
+영상 시작 2.5초 동안 화면에 자막으로 나올 짧은 한국어 문구(hook_text_ko)를 반드시 만듭니다.
+15자 이내로 짧고 강렬하게. 텔레그램 캡션이 아니라 실제 영상 위에 자막으로 박제됩니다.
 
 [씬 설계 원칙]
-- 3~5개 씬으로 분할 (숏폼 15~25초 기준, 씬당 5초 또는 10초 - Kling 모델 제약)
-- 각 씬마다 dynamic multi-shot 요소 중 하나를 명시: pan / dolly in / dolly out / orbit / static
-- 미니어처·디오라마 스타일은 피사체 움직임을 1~2가지로 제한 (과한 동작은 정지감을 해침)
-- 4K resolution, hyper-realistic 또는 3D animation style 등 렌더 품질 키워드 포함
+- 3~4개 씬으로 분할 (숏폼 15~20초 기준, 씬당 5초 - Kling 모델 제약으로 5초 고정)
+- 각 씬마다 dynamic camera move 중 하나를 명시: dolly in / dolly out / orbit / whip pan / slow push
+- 4K resolution, hyper-realistic 3D render 등 렌더 품질 키워드 포함
 - 네거티브 프롬프트(blurry, low quality, watermark, text, extra limbs, realistic human face 등) 별도 명시
-- visual_prompt_en에는 카메라 워크 문구(예: slow dolly in, orbit, static push in)를 반드시 포함할 것
-  (이 문구가 이미지 생성과 영상 모션 생성 양쪽에 다 쓰입니다)
 
 반드시 아래 JSON 구조로만 응답하세요 (다른 텍스트 없이 JSON만, 모든 문자열은 줄바꿈 없이 한 줄로):
 
 {
   "project_title": "주제명",
-  "style_anchor": "전체 영상 공통 스타일 문구 (영문)",
+  "style_anchor": "전체 영상 공통 스타일 문구 (영문, 렌더/조명/색보정/렌즈)",
+  "iconic_element_en": "모든 씬에 반복 등장할 귀엽고 개성있는 시그니처 요소 묘사 (영문)",
+  "hook_text_ko": "영상 시작 2.5초 자막용 짧은 한국어 훅 문구 (15자 이내)",
   "aspect_ratio": "9:16",
-  "total_duration_sec": 20,
   "scenes": [
     {
       "scene_number": 1,
       "story_ko": "씬 스토리 설명 (한국어)",
-      "duration_sec": 5,
-      "visual_prompt_en": "상세 시각 묘사 + 카메라 워크 + 조명 + 텍스처 (영문)",
-      "negative_prompt_en": "제외할 요소 (영문)",
-      "sound_vibe_en": "분위기 음악 및 SFX 키워드 (영문)",
-      "transition_to_next": "다음 씬 전환 방식"
+      "visual_prompt_en": "1번 씬은 전체 장면을 설정하는 와이드 샷. 시각 묘사 + 카메라 워크 + 조명 + iconic_element 포함 (영문)",
+      "negative_prompt_en": "제외할 요소 (영문)"
+    },
+    {
+      "scene_number": 2,
+      "story_ko": "1번 씬에서 카메라가 이동한 결과 이어지는 다음 컷 설명 (한국어)",
+      "visual_prompt_en": "직전 프레임에서 카메라가 어떻게 움직여 무엇을 보여주는지 (영문, 카메라 워크 필수 포함)",
+      "negative_prompt_en": "제외할 요소 (영문)"
     }
   ],
   "youtube_metadata": {
     "title": "후킹 제목 (60자 이내)",
     "description": "영상 요약 2~3줄 + 주요 타임라인",
     "tags": ["#태그1", "#태그2", "#쇼츠", "#AI영상"],
-    "shorts_hook": "첫 3초 시청자를 사로잡을 나레이션/자막 문구"
+    "shorts_hook": "첫 3초 시청자를 사로잡을 나레이션 문구"
   }
 }"""
 
@@ -91,7 +108,6 @@ def generate_scene_plan(topic: str) -> dict:
 
 
 def poll_until_done(data: dict, max_wait_sec: int = 90) -> dict:
-    """Replicate 예측(prediction) 완료까지 폴링"""
     get_url = data["urls"]["get"]
     waited = 0
     while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
@@ -107,17 +123,11 @@ def poll_until_done(data: dict, max_wait_sec: int = 90) -> dict:
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
-    """Flux-schnell로 이미지 생성, 완료까지 폴링 후 이미지 URL 반환"""
+    """Flux-schnell로 이미지 생성 (오직 1번 씬에서만 사용), 이미지 URL 반환"""
     res = requests.post(
         "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
         headers=REPLICATE_HEADERS,
-        json={
-            "input": {
-                "prompt": prompt,
-                "aspect_ratio": aspect_ratio,
-                "output_format": "jpg",
-            }
-        },
+        json={"input": {"prompt": prompt, "aspect_ratio": aspect_ratio, "output_format": "jpg"}},
         timeout=30,
     )
     res.raise_for_status()
@@ -129,11 +139,9 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
     return image_url
 
 
-def generate_video_clip(image_url: str, motion_prompt: str, negative_prompt: str,
-                         duration: int, aspect_ratio: str, index: int) -> str:
-    """Kling 2.5 Turbo Pro로 이미지->영상 변환, 완료까지 폴링 후 mp4 로컬 경로 반환"""
-    duration = 5 if duration <= 5 else 10  # Kling은 5초 또는 10초만 지원
-
+def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
+                         aspect_ratio: str, index: int) -> str:
+    """Kling 2.5 Turbo Pro로 이미지->영상 변환. image_source는 URL 또는 data URI 둘 다 가능."""
     res = requests.post(
         "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
         headers=REPLICATE_HEADERS,
@@ -141,15 +149,15 @@ def generate_video_clip(image_url: str, motion_prompt: str, negative_prompt: str
             "input": {
                 "prompt": motion_prompt,
                 "negative_prompt": negative_prompt,
-                "image": image_url,
-                "duration": duration,
+                "image": image_source,
+                "duration": 5,
                 "aspect_ratio": aspect_ratio,
             }
         },
         timeout=30,
     )
     res.raise_for_status()
-    data = poll_until_done(res.json(), max_wait_sec=240)  # 영상은 이미지보다 오래 걸림
+    data = poll_until_done(res.json(), max_wait_sec=240)
 
     output = data.get("output")
     video_url = output[0] if isinstance(output, list) else output
@@ -165,21 +173,50 @@ def generate_video_clip(image_url: str, motion_prompt: str, negative_prompt: str
     return clip_path
 
 
-def stitch_clips(clip_paths: list, output_path: str):
-    """ffmpeg로 여러 영상 클립을 하나로 이어붙이기"""
+def extract_last_frame(clip_path: str, index: int) -> str:
+    """영상 클립의 마지막 프레임을 이미지로 추출 (다음 씬의 시작 이미지로 사용)"""
+    frame_path = f"{WORK_DIR}/last_frame_{index}.jpg"
+    subprocess.run(
+        ["ffmpeg", "-y", "-sseof", "-1", "-i", clip_path, "-update", "1", "-q:v", "2", frame_path],
+        check=True,
+        capture_output=True,
+    )
+    return frame_path
+
+
+def image_to_data_uri(image_path: str) -> str:
+    with open(image_path, "rb") as f:
+        encoded = base64.b64encode(f.read()).decode("utf-8")
+    return f"data:image/jpeg;base64,{encoded}"
+
+
+def stitch_clips_with_hook(clip_paths: list, hook_text: str, output_path: str):
+    """ffmpeg로 씬 영상들을 이어붙이고, 맨 앞 2.5초에 훅 문구 자막을 삽입"""
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
     with open(concat_list_path, "w") as f:
         for path in clip_paths:
             f.write(f"file '{os.path.abspath(path)}'\n")
 
+    concatenated_path = f"{WORK_DIR}/concatenated.mp4"
     subprocess.run(
-        [
-            "ffmpeg", "-y",
-            "-f", "concat", "-safe", "0",
-            "-i", concat_list_path,
-            "-c", "copy",
-            output_path,
-        ],
+        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
+         "-c", "copy", concatenated_path],
+        check=True,
+    )
+
+    hook_text_path = f"{WORK_DIR}/hook_text.txt"
+    with open(hook_text_path, "w", encoding="utf-8") as f:
+        f.write(hook_text)
+
+    drawtext = (
+        f"drawtext=fontfile={FONT_PATH}:textfile={hook_text_path}:reload=1:"
+        f"fontcolor=white:fontsize=64:box=1:boxcolor=black@0.55:boxborderw=24:"
+        f"x=(w-text_w)/2:y=140:enable='between(t,0,2.5)'"
+    )
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", concatenated_path, "-vf", drawtext,
+         "-c:v", "libx264", "-c:a", "copy", "-pix_fmt", "yuv420p", output_path],
         check=True,
     )
 
@@ -201,11 +238,7 @@ def send_telegram_video(video_path: str, plan: dict):
     with open(video_path, "rb") as f:
         resp = requests.post(
             url,
-            data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "caption": caption,
-                "parse_mode": "Markdown",
-            },
+            data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "Markdown"},
             files={"video": f},
             timeout=120,
         )
@@ -229,23 +262,29 @@ def main():
     print("씬 구성 완료:", json.dumps(plan, ensure_ascii=False, indent=2))
 
     aspect_ratio = plan.get("aspect_ratio", "9:16")
+    style_anchor = plan["style_anchor"]
+    iconic_element = plan["iconic_element_en"]
     clip_paths = []
 
-    for scene in plan["scenes"]:
+    for i, scene in enumerate(plan["scenes"]):
         idx = scene["scene_number"]
         print(f"--- 씬 {idx} 처리 시작 ---")
 
-        full_visual_prompt = f"{plan['style_anchor']}, {scene['visual_prompt_en']}"
+        full_prompt = f"{style_anchor}, featuring {iconic_element}, {scene['visual_prompt_en']}"
         negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text")
 
-        image_url = generate_image(full_visual_prompt, negative_prompt, aspect_ratio)
-        print(f"씬 {idx} 이미지 생성 완료: {image_url}")
+        if i == 0:
+            image_source = generate_image(full_prompt, negative_prompt, aspect_ratio)
+            print(f"씬 {idx} 이미지 생성 완료 (Flux)")
+        else:
+            frame_path = extract_last_frame(clip_paths[-1], idx)
+            image_source = image_to_data_uri(frame_path)
+            print(f"씬 {idx} 시작 이미지 = 이전 씬 마지막 프레임")
 
         clip_path = generate_video_clip(
-            image_url=image_url,
+            image_source=image_source,
             motion_prompt=scene["visual_prompt_en"],
             negative_prompt=negative_prompt,
-            duration=scene.get("duration_sec", 5),
             aspect_ratio=aspect_ratio,
             index=idx,
         )
@@ -253,7 +292,7 @@ def main():
         clip_paths.append(clip_path)
 
     final_path = f"{WORK_DIR}/final_video.mp4"
-    stitch_clips(clip_paths, final_path)
+    stitch_clips_with_hook(clip_paths, plan["hook_text_ko"], final_path)
     print(f"최종 영상 완성: {final_path}")
 
     send_telegram_video(final_path, plan)
