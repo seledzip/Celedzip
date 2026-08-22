@@ -89,7 +89,7 @@ Return ONLY a valid JSON object matching this schema:
 }"""
 
     response = client.messages.create(
-        model="claude-3-5-sonnet-20241022",
+        model="claude-3-haiku-20240307",
         max_tokens=4096,
         system=system_prompt,
         messages=[{"role": "user", "content": f"Topic: {topic}"}],
