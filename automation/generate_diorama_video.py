@@ -1,10 +1,9 @@
 """
-글로벌 미니어처 ASMR 숏폼 자동화 스크립트 (v7 - Replicate LLM Engine)
-- Anthropic 의존성 제거 -> Replicate Meta Llama 3.3 70B로 씬 기획 생성
-- 화면 자막 없이 100% 비주얼 및 ASMR 중심 렌더링
-- Flux -> Kling 2.5 Turbo -> 마지막 프레임 연결
-- 무자막 영상 병합 + MusicGen ASMR 앰비언스 믹싱
-- 텔레그램 승인 메시지 전송 및 metadata.json 저장
+글로벌 미니어처 ASMR 숏폼 자동화 파이프라인 (v9 - Complete Sound & Safe Publish)
+- Replicate Meta Llama 3 기반 씬 JSON 생성
+- Flux Schnell -> Kling 2.5 Turbo Pro -> 프레임 연결
+- MusicGen ASMR 배경음 생성 및 FFmpeg AAC 192k 믹싱
+- 텔레그램 미리보기 전송 및 metadata.json 저장
 """
 
 import os
@@ -111,7 +110,6 @@ JSON Schema:
     output = data.get("output")
     raw_text = "".join(output) if isinstance(output, list) else str(output)
     
-    # JSON 추출 및 파싱
     raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
     match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
     if match:
@@ -169,38 +167,35 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
 
 
 def generate_bgm(prompt: str, duration_sec: int) -> str:
-    try:
-        res = requests.post(
-            "https://api.replicate.com/v1/models/meta/musicgen/predictions",
-            headers=REPLICATE_HEADERS,
-            json={
-                "input": {
-                    "prompt": prompt,
-                    "model_version": "stereo-large",
-                    "duration": min(duration_sec, 30),
-                    "output_format": "mp3",
-                    "normalization_strategy": "peak",
-                }
-            },
-            timeout=30,
-        )
-        res.raise_for_status()
-        data = poll_until_done(res.json(), max_wait_sec=180)
-        output = data.get("output")
-        audio_url = output[0] if isinstance(output, list) else output
-        if not audio_url:
-            raise RuntimeError(f"BGM generation failed: {data}")
+    print(f"🎵 ASMR 배경음 생성 시작: '{prompt}'")
+    res = requests.post(
+        "https://api.replicate.com/v1/models/meta/musicgen/predictions",
+        headers=REPLICATE_HEADERS,
+        json={
+            "input": {
+                "prompt": prompt,
+                "duration": int(min(duration_sec, 30)),
+                "output_format": "mp3",
+                "normalization_strategy": "loudness",
+            }
+        },
+        timeout=30,
+    )
+    res.raise_for_status()
+    data = poll_until_done(res.json(), max_wait_sec=180)
+    output = data.get("output")
+    audio_url = output if isinstance(output, str) else (output[0] if isinstance(output, list) else None)
+    
+    if not audio_url:
+        raise RuntimeError(f"배경음 생성 실패 (오디오 URL 없음): {data}")
 
-        audio_res = requests.get(audio_url, timeout=60)
-        audio_res.raise_for_status()
-        bgm_path = f"{WORK_DIR}/bgm.mp3"
-        with open(bgm_path, "wb") as f:
-            f.write(audio_res.content)
-        print(f"BGM 생성 완료: {bgm_path}")
-        return bgm_path
-    except Exception as e:
-        print(f"BGM 생성 건너뜀: {e}")
-        return None
+    audio_res = requests.get(audio_url, timeout=60)
+    audio_res.raise_for_status()
+    bgm_path = f"{WORK_DIR}/bgm.mp3"
+    with open(bgm_path, "wb") as f:
+        f.write(audio_res.content)
+    print(f"🎵 배경음 생성 완료: {bgm_path} ({os.path.getsize(bgm_path)} bytes)")
+    return bgm_path
 
 
 def extract_last_frame(clip_path: str, index: int) -> str:
@@ -234,10 +229,10 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
 
 
 def mux_audio(video_path: str, bgm_path: str, output_path: str):
-    if not bgm_path:
-        subprocess.run(["cp", video_path, output_path], check=True)
-        return
+    if not bgm_path or not os.path.exists(bgm_path):
+        raise FileNotFoundError(f"배경음 파일을 찾을 수 없습니다: {bgm_path}")
 
+    print("🎬 비디오 + 오디오 합성 진행...")
     subprocess.run(
         [
             "ffmpeg", "-y",
@@ -245,6 +240,7 @@ def mux_audio(video_path: str, bgm_path: str, output_path: str):
             "-i", bgm_path,
             "-c:v", "copy",
             "-c:a", "aac",
+            "-b:a", "192k",
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-shortest",
@@ -253,38 +249,27 @@ def mux_audio(video_path: str, bgm_path: str, output_path: str):
         check=True,
         capture_output=True,
     )
+    print(f"✅ 오디오 합성 완료: {output_path}")
 
 
-def send_telegram_video(video_path: str, plan: dict):
+def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🎬 *[{plan['project_title']}] Global Video Created!*\n\n"
+        f"🎬 *[{plan['project_title']}] 영상 렌더링 완료!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
-        f"👇 *영상을 확인하시고 아래 버튼을 눌러 발행하세요.*"
+        f"🚀 *잠시 후 유튜브에 '일부공개'로 안전하게 자동 등록됩니다.*"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
-
-    reply_markup = {
-        "inline_keyboard": [
-            [{"text": "🚀 Publish to YouTube Shorts", "callback_data": "approve_upload"}],
-            [{"text": "❌ Discard", "callback_data": "cancel_upload"}]
-        ]
-    }
 
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
     with open(video_path, "rb") as f:
         resp = requests.post(
             url,
-            data={
-                "chat_id": TELEGRAM_CHAT_ID,
-                "caption": caption,
-                "parse_mode": "Markdown",
-                "reply_markup": json.dumps(reply_markup)
-            },
+            data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "parse_mode": "Markdown"},
             files={"video": f},
             timeout=120,
         )
@@ -299,7 +284,7 @@ def send_telegram_message(text: str):
 def main():
     print(f"Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
-    send_telegram_message(f"🎬 Creating global ASMR miniature video for: '{TOPIC}' (Takes ~3-4 mins)")
+    send_telegram_message(f"🎬 영상 생성 시작: '{TOPIC}' (예상 소요시간: 약 5~7분)")
 
     plan = generate_scene_plan(TOPIC)
     print("Plan generated successfully:", json.dumps(plan, ensure_ascii=False, indent=2))
@@ -343,8 +328,8 @@ def main():
     final_path = f"{WORK_DIR}/final_video.mp4"
     mux_audio(stitched_video_path, bgm_path, final_path)
 
-    send_telegram_video(final_path, plan)
-    print("완료: 텔레그램 전송 성공!")
+    send_telegram_preview(final_path, plan)
+    print("미리보기 영상 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
