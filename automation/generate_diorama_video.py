@@ -24,7 +24,7 @@ REPLICATE_API_TOKEN = os.environ["REPLICATE_API_TOKEN"].strip()
 TOPIC = os.environ["TOPIC"].strip()
 
 WORK_DIR = "video_work"
-FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicExtraBold.ttf"
+FONT_PATH = "/usr/share/fonts/truetype/nanum/NanumGothicBold.ttf"
 SCENE_DURATION = 5.0
 client = Anthropic(api_key=ANTHROPIC_API_KEY)
 
