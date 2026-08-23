@@ -1,3 +1,6 @@
+﻿import sys
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 """
 아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v21.3 - Master Quality ASMR & Precision Visual)
 - [UPGRADE] 손가락/젖병 왜곡(Morphing) 방지 네거티브 프롬프트 강화
