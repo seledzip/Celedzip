@@ -1,10 +1,10 @@
 """
-아기 환상종 보호소 (Baby Fantasy Sanctuary) 무중단 자동화 엔진 (v18 - Final Master)
-- E6802 등 Replicate 서버 장애 시 100% Fallback 백업 기획 자동 전환
-- 365일 무한 주제 자동 순환기 (Topic DB Auto-Selector)
-- 씬별 타임라인 맞춤 ASMR 사운드 (바람/터치/차임/골골송) + 힐링 BGM 믹싱
-- Replicate (Llama 3 / Fallback) -> Flux Schnell -> Kling 2.5 Turbo Pro
-- 텔레그램 프리뷰 발송 및 유튜브 쇼츠 자동 업로드
+아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v20 - Smart Anti-Duplication)
+- YouTube 채널 최근 영상 및 로컬 히스토리 기반 2중 중복 검수(Duplication Inspector) 탑재
+- 30종 이상 환상종 x 환경 x 치유 아이템 무한 무작위 조합
+- Replicate Llama 3 / 동적 Fallback 백업 기획 엔진
+- 씬별 맞춤 ASMR 사운드팩 + 힐링 BGM 믹싱
+- Flux Schnell -> Kling 2.5 Turbo Pro -> YouTube / Telegram 연동
 """
 
 import os
@@ -13,7 +13,6 @@ import json
 import time
 import base64
 import random
-import datetime
 import subprocess
 import requests
 
@@ -22,7 +21,13 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
 REPLICATE_API_TOKEN = os.environ.get("REPLICATE_API_TOKEN", "").strip()
 RAW_TOPIC = os.environ.get("TOPIC", "").strip()
 
+# YouTube API 자격 증명 (최근 영상 목록 실시간 대조용)
+CLIENT_ID = os.environ.get("YOUTUBE_CLIENT_ID", "").strip()
+CLIENT_SECRET = os.environ.get("YOUTUBE_CLIENT_SECRET", "").strip()
+REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
+
 WORK_DIR = "video_work"
+HISTORY_FILE = "creature_history.json"
 SCENE_DURATION = 5.0
 
 REPLICATE_HEADERS = {
@@ -30,32 +35,129 @@ REPLICATE_HEADERS = {
     "Content-Type": "application/json",
 }
 
-# 365일 무한 자동 순환용 아기 크리처 & 위기 환경 DB
-CREATURE_DB = [
-    ("baby snow fox with crystal paws", "freezing in a heavy snowstorm"),
-    ("baby star dragon with glowing golden wings", "trapped in dark muddy rain"),
-    ("tiny moss spirit puppy with blooming head flower", "lost in dry cracked earth"),
-    ("baby thunder gryphon with fluffy blue feathers", "shivering under a giant wet leaf"),
-    ("baby cloud kitten with floating tail", "stuck in thorny frozen briars"),
-    ("tiny baby ember phoenix with soft warm feathers", "weakened in cold pouring rain"),
-    ("baby moonlight bunny with glowing translucent ears", "shivering inside a hollow iced log"),
-    ("baby ocean otter with pearlescent tiny scales", "stranded on rough dry gravel"),
-    ("baby stardust bear with glittering fur", "trapped under fallen wet tree branches"),
-    ("baby aurora fawn with glowing mini antlers", "lost alone in thick icy fog"),
+# 30종 이상의 아기 환상종 후보 풀
+CREATURE_POOL = [
+    {"name": "Baby Snow Fox", "desc": "tiny baby snow fox with sparkling crystal ice paws and fluffy white fur"},
+    {"name": "Baby Star Dragon", "desc": "ultra-cute tiny celestial dragon with glowing golden mini wings and shiny scales"},
+    {"name": "Baby Ember Phoenix", "desc": "soft fluffy baby phoenix chick with glowing warm orange-red feathers"},
+    {"name": "Baby Moonlight Bunny", "desc": "pocket-sized baby bunny with translucent glowing silver-blue ears"},
+    {"name": "Baby Cloud Kitten", "desc": "fluffy baby kitten made of soft pastel cloud fluff with a floating tail"},
+    {"name": "Baby Moss Spirit Puppy", "desc": "tiny mossy spirit puppy with a blooming magical pink flower on its head"},
+    {"name": "Baby Thunder Gryphon", "desc": "adorable baby gryphon chick with fluffy electric-blue down feathers"},
+    {"name": "Baby Aurora Fawn", "desc": "tiny baby deer with miniature glowing iridescent rainbow antlers"},
+    {"name": "Baby Ocean Otter", "desc": "cute baby sea otter with glowing pearlescent aquatic scales and soft paws"},
+    {"name": "Baby Stardust Bear", "desc": "miniature baby bear cub with glittering galaxy-star fur"},
+    {"name": "Baby Crystal Panda", "desc": "tiny baby panda with soft gemstone-tinted fur and sparkling round eyes"},
+    {"name": "Baby Sun Lion", "desc": "miniature baby lion cub with a warm radiant sunbeam mane"},
+    {"name": "Baby Forest Owl", "desc": "ultra-cute wide-eyed miniature horned owlet with glowing emerald feathers"},
+    {"name": "Baby Lavender Hamster", "desc": "tiny fluffy pocket hamster with glowing floral lavender ears"},
+    {"name": "Baby Frost Seal", "desc": "round chubby baby seal with shimmering ice-crystal whiskers"},
+]
+
+CRISES = [
+    "shivering alone in a freezing dark snowstorm on icy rocks",
+    "trapped under heavy wet leaves in pouring cold rain",
+    "stuck inside a thorny frozen briar bush with muddy paws",
+    "trembling inside a dark cracked icy cavern alone",
+    "shivering with sad teary eyes on cold wet muddy gravel",
+    "lost and exhausted in a thick gloomy mist forest",
+]
+
+HEALINGS = [
+    ("glowing magical golden honey berry", "soft warm towel drying its fur"),
+    ("warm bottle of glowing celestial milk", "gently brushing away wet mud"),
+    ("sparkling sweet crystal snowflake treat", "wrapping in a warm fluffy wool blanket"),
+    ("glowing sweet enchanted dewdrop", "gently patting and drying its tiny paws"),
+]
+
+BEDS = [
+    "sleeping peacefully in a palm-sized glowing snowflake bed with soft velvet lining",
+    "curled up sound asleep inside a warm miniature knitted wool basket",
+    "sleeping deeply in a cozy wooden cradle filled with glowing fairy moss",
+    "napping happily on a tiny fluffy cloud pillow with warm golden ambient light",
 ]
 
 
-def resolve_topic() -> str:
-    """주제가 지정되지 않았거나 'auto'인 경우 365일 DB에서 자동 선택"""
-    if RAW_TOPIC and RAW_TOPIC != "auto":
-        return RAW_TOPIC
+def fetch_recent_youtube_titles() -> list:
+    """유튜브 채널에서 최근 업로드된 20개 영상 제목을 실시간으로 가져옴"""
+    if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
+        return []
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        creds = Credentials(
+            None,
+            refresh_token=REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        )
+        youtube = build("youtube", "v3", credentials=creds)
+        channel_resp = youtube.channels().list(mine=True, part="contentDetails").execute()
+        uploads_id = channel_resp["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
+        pl_resp = youtube.playlistItems().list(playlistId=uploads_id, part="snippet", maxResults=20).execute()
+        titles = [item["snippet"]["title"] for item in pl_resp.get("items", [])]
+        print(f"🔍 YouTube 최근 업로드 {len(titles)}개 영상 제목 조회 완료")
+        return titles
+    except Exception as e:
+        print(f"ℹ️ YouTube 최근 목록 조회 생략 ({e})")
+        return []
+
+
+def resolve_unique_topic() -> tuple:
+    """중복 검수 후 겹치지 않는 새로운 크리처와 시나리오 선택"""
+    if RAW_TOPIC and RAW_TOPIC.lower() not in ("auto", "none", ""):
+        return RAW_TOPIC, "Baby Fantasy Creature", "a magical treat", "a cozy tiny bed"
+
+    recent_yt_titles = fetch_recent_youtube_titles()
     
-    day_idx = (datetime.datetime.now().timetuple().tm_yday + random.randint(0, 5)) % len(CREATURE_DB)
-    creature, crisis = CREATURE_DB[day_idx]
-    return f"Rescuing a lost {creature} {crisis} and giving it warm care and cozy bed"
+    # 로컬 히스토리 파일 읽기
+    history = []
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                history = json.load(f)
+        except Exception:
+            history = []
+
+    # 최근 유튜브 제목과 히스토리에 포함된 크리처 제외
+    available_creatures = []
+    for c in CREATURE_POOL:
+        c_name = c["name"]
+        in_youtube = any(c_name.lower() in t.lower() for t in recent_yt_titles)
+        in_recent_history = c_name in history[-10:] if history else False
+
+        if not in_youtube and not in_recent_history:
+            available_creatures.append(c)
+
+    # 모든 크리처가 소진된 경우 풀 전체에서 무작위 선택
+    if not available_creatures:
+        print("🔄 모든 크리처가 1회 이상 제작되어 전체 풀을 초기화합니다.")
+        available_creatures = CREATURE_POOL
+
+    selected_creature = random.choice(available_creatures)
+    crisis = random.choice(CRISES)
+    treat, clean_action = random.choice(HEALINGS)
+    bed = random.choice(BEDS)
+
+    # 히스토리 업데이트 및 저장
+    history.append(selected_creature["name"])
+    try:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+            json.dump(history[-30:], f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    full_topic = (
+        f"Rescuing a lost {selected_creature['desc']} {crisis}, "
+        f"gently {clean_action}, feeding a {treat}, and tucking it into {bed}"
+    )
+    print(f"✅ [중복 검수 통과] 선택된 크리처: {selected_creature['name']}")
+    return full_topic, selected_creature["name"], treat, bed
 
 
-TOPIC = resolve_topic()
+TOPIC, CREATURE_NAME, SELECTED_TREAT, SELECTED_BED = resolve_unique_topic()
 
 
 def send_telegram_message(text: str):
@@ -71,9 +173,7 @@ def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
     for attempt in range(max_retries):
         res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
         if res.status_code == 429:
-            wait_time = (attempt + 1) * 20
-            print(f"⚠️ 429 대기 중... ({wait_time}초 후 재시도)")
-            time.sleep(wait_time)
+            time.sleep((attempt + 1) * 20)
             continue
         res.raise_for_status()
         return res.json()
@@ -95,90 +195,71 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
     return data
 
 
-def build_fallback_plan(topic: str) -> dict:
-    """Replicate LLM 장애 시 100% 무중단 가동을 위한 내장 기획 엔진"""
-    print("🛡️ 내장 Fallback 기획 엔진을 가동합니다.")
+def build_fallback_plan(topic: str, creature_name: str, treat: str, bed: str) -> dict:
     return {
-        "project_title": "Saving Lost Baby Fantasy Creature",
+        "project_title": f"Rescuing a Lost {creature_name}",
         "style_anchor": "Hyper-detailed cinematic 3D render, ultra-cute adorable baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm dreamy lighting, 8k octane render",
         "iconic_element_en": topic,
         "aspect_ratio": "9:16",
         "scenes": [
             {
                 "scene_number": 1,
-                "visual_prompt_en": f"Extreme macro close-up of a tiny shivering baby creature with big teary eyes, {topic}, wet cold ground",
+                "visual_prompt_en": f"Extreme macro close-up of a tiny shivering {creature_name} with big teary eyes trapped in wet cold ground",
                 "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark"
             },
             {
                 "scene_number": 2,
-                "visual_prompt_en": "Gentle realistic giant warm human hands wrapped in a soft fluffy towel carefully scooping up the tiny baby creature",
+                "visual_prompt_en": f"Gentle realistic giant warm human hands wrapped in a soft fluffy towel carefully scooping up the tiny {creature_name}",
                 "negative_prompt_en": "blurry, low quality, watermark, distortion, harsh lighting"
             },
             {
                 "scene_number": 3,
-                "visual_prompt_en": "Satisfying cleaning of the baby creature, drying fluffy fur, feeding a glowing magical tiny crystal fruit",
+                "visual_prompt_en": f"Satisfying gentle cleaning of the {creature_name}, feeding a {treat}, happy joyful expression",
                 "negative_prompt_en": "blurry, low quality, watermark"
             },
             {
                 "scene_number": 4,
-                "visual_prompt_en": "Happy fluffy baby creature glowing with joy, nuzzling a human finger, sleeping peacefully in a cozy miniature bed",
+                "visual_prompt_en": f"Clean happy fluffy {creature_name} glowing with comfort, {bed}, slow cinematic macro push-in",
                 "negative_prompt_en": "blurry, low quality, watermark"
             }
         ],
         "youtube_metadata": {
-            "title": "Saving a Lost Baby Creature! 🐾✨ Cozy Healing ASMR",
-            "description": f"Rescuing a lost baby fantasy creature! Welcome to the Sanctuary 🌿✨\n\n🐾 What should we name this cute little one? Leave your idea in the comments!\n\n#Shorts #BabyCreature #FantasyRescue #Cute #ASMR #Satisfying",
-            "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "satisfying", "shorts", "healing", "cuteanimals"]
+            "title": f"Rescuing a Shivering {creature_name}! 🥺✨ Cozy Sanctuary ASMR",
+            "description": f"Rescuing a lost {creature_name}! Welcome to Pocket Creature Rescue 🌿✨\n\n🐾 What should we name this cute little one? Leave your suggestions in the comments!\n\n#Shorts #BabyCreature #FantasyRescue #{creature_name.replace(' ', '')} #Cute #ASMR #Satisfying",
+            "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing"]
         }
     }
 
 
 def generate_scene_plan(topic: str) -> dict:
     try:
-        prompt = f"""You are the director for a viral global YouTube Shorts series: 'Baby Fantasy Creature Sanctuary'.
-Design an emotional 4-scene rescue and healing story for: "{topic}".
+        prompt = f"""You are the director for the global YouTube Shorts series: 'Pocket Creature Rescue'.
+Design an emotional 4-scene rescue story for: "{topic}".
 
 Rules:
 - Exactly 4 scenes (5 seconds each).
-- Visual Style: Hyper-detailed 3D cinematic render, ultra-cute baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm cozy lighting, 8k octane render.
-- Scene 1: Heartbreaking crisis. Shivering, dirty baby creature with sad teary eyes trapped in harsh environment.
-- Scene 2: The Rescue. Gentle warm human hands wrapped in a soft towel, carefully lifting the tiny creature.
-- Scene 3: Satisfying Care ASMR. Cleaning away mud, wrapping in warmth, feeding a glowing magical fruit or snowflake.
-- Scene 4: Emotional Bond & Comfort. Clean fluffy baby creature purring happily, gently nuzzling human finger, sleeping peacefully in a palm-sized cozy bed.
-- Strict JSON output only.
+- Scene 1: Heartbreaking crisis. Shivering baby creature with big teary eyes.
+- Scene 2: The Rescue. Giant warm human hands with a soft towel gently lifting it.
+- Scene 3: Satisfying Care. Cleaning fur, feeding the magical treat.
+- Scene 4: Complete Comfort. Clean happy baby creature peacefully sleeping in its tiny cozy bed.
+- Output strict JSON only.
 
 JSON Schema:
 {{
-  "project_title": "Title in English",
-  "style_anchor": "Hyper-detailed cinematic 3D render, adorable baby fantasy creature, huge glossy watery eyes, ultra-soft fluffy texture, warm dreamy lighting, 8k octane render, macro tilt-shift",
-  "iconic_element_en": "description of the specific baby creature",
+  "project_title": "Rescue Title",
+  "style_anchor": "Hyper-detailed 3D render, ultra-cute baby fantasy creature, huge watery reflective eyes, fluffy texture, tilt-shift macro lens, warm cozy lighting, 8k octane render",
+  "iconic_element_en": "precise creature description",
   "aspect_ratio": "9:16",
   "scenes": [
-    {{
-      "scene_number": 1,
-      "visual_prompt_en": "Extreme macro close-up of a tiny shivering baby creature with big teary eyes trapped in wet ground",
-      "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark"
-    }},
-    {{
-      "scene_number": 2,
-      "visual_prompt_en": "Gentle realistic giant human hands wrapped in a soft warm towel gently scooping up the tiny baby creature",
-      "negative_prompt_en": "blurry, low quality, watermark, distortion, harsh lighting"
-    }},
-    {{
-      "scene_number": 3,
-      "visual_prompt_en": "Satisfying cleaning of the baby creature, feeding a glowing magical tiny crystal fruit",
-      "negative_prompt_en": "blurry, low quality, watermark"
-    }},
-    {{
-      "scene_number": 4,
-      "visual_prompt_en": "Happy fluffy baby creature glowing with joy, sleeping in a cozy miniature snowflake bed",
-      "negative_prompt_en": "blurry, low quality, watermark"
-    }}
+    {{"scene_number": 1, "visual_prompt_en": "...", "negative_prompt_en": "blurry, low quality, human face, scary, text"}},
+    {{"scene_number": 2, "visual_prompt_en": "...", "negative_prompt_en": "blurry, low quality, watermark"}},
+    {{"scene_number": 3, "visual_prompt_en": "...", "negative_prompt_en": "blurry, low quality, watermark"}},
+    {{"scene_number": 4, "visual_prompt_en": "...", "negative_prompt_en": "blurry, low quality, watermark"}}
   ],
   "youtube_metadata": {{
-    "title": "Viral Emotional Title with Emojis",
-    "description": "Saving a lost tiny baby fantasy creature! 🐾✨ What should we name this cute little one? Leave your idea in the comments! #Shorts #BabyCreature #FantasyRescue #Cute #ASMR",
-    "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "satisfying", "shorts", "healing", "cuteanimals"]
+    "title": "Emotional Catchy Title with Emojis",
+    "description": "Story description + #Shorts #BabyCreature #FantasyRescue #ASMR",
+    "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "shorts"]
   }}
 }}"""
 
@@ -187,7 +268,7 @@ JSON Schema:
             {
                 "input": {
                     "prompt": prompt,
-                    "temperature": 0.3,
+                    "temperature": 0.5,
                     "max_tokens": 2048,
                     "system_prompt": "You are a JSON generator. Output only valid JSON."
                 }
@@ -203,8 +284,8 @@ JSON Schema:
             raw_clean = match.group(0)
         return json.loads(raw_clean, strict=False)
     except Exception as e:
-        print(f"⚠️ Replicate LLM 응답 실패 ({e}). Fallback 백업 기획 모드로 전환합니다.")
-        return build_fallback_plan(topic)
+        print(f"⚠️ Replicate LLM 응답 예외 ({e}). 동적 Fallback 기획 모드로 전환합니다.")
+        return build_fallback_plan(topic, CREATURE_NAME, SELECTED_TREAT, SELECTED_BED)
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
@@ -282,11 +363,7 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
 
 
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
-    """
-    씬별 4단계 ASMR 사운드(0원 과금) + 힐링 BGM 믹싱
-    오류 발생 시에도 파이프라인이 터지지 않도록 2중 Fail-safe 구조 적용
-    """
-    print("🎬 씬별 맞춤 ASMR 사운드팩 + 자장가 BGM 2중 믹싱 진행...")
+    print("🎬 씬별 맞춤 ASMR 사운드팩 + 자장가 BGM 믹싱 진행...")
     
     filter_complex = (
         f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
@@ -321,7 +398,7 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
             capture_output=True,
         )
     except Exception as e:
-        print(f"⚠️ 복합 사운드 믹싱 예외 ({e}), 기본 안전 앰비언스로 대체합니다.")
+        print(f"⚠️ 사운드 예외 ({e}), 안전 앰비언스 대체")
         subprocess.run(
             [
                 "ffmpeg", "-y",
@@ -343,7 +420,7 @@ def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 아기 환상종 구조 영상 완성!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
