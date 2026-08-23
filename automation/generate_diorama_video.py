@@ -1,9 +1,10 @@
 """
-아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v22 - 25s 5-Scene Complete Narrative)
+아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v22.1 - 25s 5-Scene Complete Narrative)
 - 5단계 25초 완결형 시네마틱 구조 (위기 -> 구조 -> 식사 -> 침대 눕히기 -> 깊은 수면 엔딩)
+- Windows / Linux 호환 절대 경로 안전 슬래시 변환 적용 (FFmpeg Concat 버그 수정)
 - YouTube 채널 최근 영상 및 로컬 히스토리 기반 2중 중복 검수
 - 30종 이상 환상종 x 환경 x 치유 아이템 무한 무작위 조합
-- 5개 씬 맞춤 실제 ASMR SFX 사운드팩 + 힐링 BGM 25초 믹싱
+- 5개 씬 맞춤 실제 ASMR SFX 사운드팩 + 힐링 BGM 25초 믹싱 (피크 방지 리미터 탑재)
 - Flux 1.1 Pro Ultra -> Kling 2.5 Turbo Pro -> YouTube / Telegram 연동
 """
 
@@ -34,11 +35,11 @@ BGM_LIBRARY_DIR = "automation/sfx_library/bgm_ambient"
 
 # 5개 씬별 맞춤 SFX 레이어 매핑 (총 25초)
 SCENE_SFX_MAP = {
-    1: ["wind_cold_ambient", "soft_whimper_rustle"],       # 1씬 (위기): 차가운 바람 + 바스락
-    2: ["soft_fabric_towel", "gentle_lift_rustle"],        # 2씬 (구조): 부드러운 타월 + 안아올림
-    3: ["water_drops", "gentle_taps"],                     # 3씬 (식사/치유): 퐁당 물방울 + 톡톡 터치
-    4: ["soft_blanket_tuck", "gentle_lift_rustle"],        # 4씬 (침대 안치): 침대에 눕히는 포근한 소리
-    5: ["sparkle_chimes", "soft_blanket_tuck"],            # 5씬 (수면 엔딩): 반짝이는 요정 차임벨 + 안식
+    1: ["wind_cold_ambient", "soft_whimper_rustle"],       # 1씬 (위기 / 0~5초): 차가운 바람 + 바스락
+    2: ["soft_fabric_towel", "gentle_lift_rustle"],        # 2씬 (구조 / 5~10초): 부드러운 타월 + 안아올림
+    3: ["water_drops", "gentle_taps"],                     # 3씬 (치유&식사 / 10~15초): 물방울 세척 + 톡톡 터치
+    4: ["soft_blanket_tuck", "gentle_lift_rustle"],        # 4씬 (침대 안치 / 15~20초): 침대에 눕히는 포근한 소리
+    5: ["sparkle_chimes", "soft_blanket_tuck"],            # 5씬 (수면 엔딩 / 20~25초): 반짝이는 요정 차임벨 + 안식
 }
 
 REPLICATE_HEADERS = {
@@ -198,7 +199,6 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
 
 
 def build_fallback_plan(topic: str, creature_name: str, treat: str, bed: str) -> dict:
-    """5개 씬 완결형 Fallback 기획"""
     return {
         "project_title": f"Rescuing a Lost {creature_name}",
         "style_anchor": "Hyper-detailed cinematic 3D render, ultra-cute adorable baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm dreamy lighting, 8k octane render",
@@ -370,10 +370,12 @@ def image_to_data_uri(image_path: str) -> str:
 
 
 def stitch_clips_clean(clip_paths: list, output_path: str):
+    """윈도우/리눅스 호환 슬래시 변환 적용 Concat 함수"""
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
-    with open(concat_list_path, "w") as f:
+    with open(concat_list_path, "w", encoding="utf-8") as f:
         for path in clip_paths:
-            f.write(f"file '{os.path.abspath(path)}'\n")
+            clean_path = os.path.abspath(path).replace("\\", "/")
+            f.write(f"file '{clean_path}'\n")
 
     subprocess.run(
         ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
