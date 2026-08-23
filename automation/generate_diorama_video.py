@@ -1,10 +1,11 @@
 """
-아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v20 - Smart Anti-Duplication)
-- YouTube 채널 최근 영상 및 로컬 히스토리 기반 2중 중복 검수(Duplication Inspector) 탑재
+아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v21.2 - Ultimate SFX & Ultra Visual)
+- YouTube 채널 최근 영상 및 로컬 히스토리 기반 2중 중복 검수(Duplication Inspector)
 - 30종 이상 환상종 x 환경 x 치유 아이템 무한 무작위 조합
 - Replicate Llama 3 / 동적 Fallback 백업 기획 엔진
-- 씬별 맞춤 ASMR 사운드팩 + 힐링 BGM 믹싱
-- Flux Schnell -> Kling 2.5 Turbo Pro -> YouTube / Telegram 연동
+- [ROBUST] Mono/Stereo 포맷 강제 통일 및 피크 방지 리미터 탑재 실제 ASMR SFX 믹싱
+- [UPGRADED] Flux 1.1 Pro Ultra 초고화질 첫 프레임 렌더링
+- Flux 1.1 Pro Ultra -> Kling 2.5 Turbo Pro -> YouTube / Telegram 연동
 """
 
 import os
@@ -29,6 +30,19 @@ REFRESH_TOKEN = os.environ.get("YOUTUBE_REFRESH_TOKEN", "").strip()
 WORK_DIR = "video_work"
 HISTORY_FILE = "creature_history.json"
 SCENE_DURATION = 5.0
+
+# ---------------------------------------------------------------------------
+# SFX 라이브러리 디렉터리 설정
+# ---------------------------------------------------------------------------
+SFX_LIBRARY_DIR = "automation/sfx_library"
+BGM_LIBRARY_DIR = "automation/sfx_library/bgm_ambient"
+
+SCENE_SFX_MAP = {
+    1: ["wind_cold_ambient", "soft_whimper_rustle"],       # 씬 1: 차가운 바람/비 + 바스락
+    2: ["soft_fabric_towel", "gentle_lift_rustle"],        # 씬 2: 부드러운 타월 + 감싸 안기
+    3: ["water_drops", "gentle_taps"],                     # 씬 3: 물방울 세척 + 부드러운 탭핑
+    4: ["sparkle_chimes", "soft_blanket_tuck"],            # 씬 4: 요정 차임벨 + 포근한 안식
+}
 
 REPLICATE_HEADERS = {
     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
@@ -111,8 +125,6 @@ def resolve_unique_topic() -> tuple:
         return RAW_TOPIC, "Baby Fantasy Creature", "a magical treat", "a cozy tiny bed"
 
     recent_yt_titles = fetch_recent_youtube_titles()
-    
-    # 로컬 히스토리 파일 읽기
     history = []
     if os.path.exists(HISTORY_FILE):
         try:
@@ -121,17 +133,14 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
-    # 최근 유튜브 제목과 히스토리에 포함된 크리처 제외
     available_creatures = []
     for c in CREATURE_POOL:
         c_name = c["name"]
         in_youtube = any(c_name.lower() in t.lower() for t in recent_yt_titles)
         in_recent_history = c_name in history[-10:] if history else False
-
         if not in_youtube and not in_recent_history:
             available_creatures.append(c)
 
-    # 모든 크리처가 소진된 경우 풀 전체에서 무작위 선택
     if not available_creatures:
         print("🔄 모든 크리처가 1회 이상 제작되어 전체 풀을 초기화합니다.")
         available_creatures = CREATURE_POOL
@@ -141,7 +150,6 @@ def resolve_unique_topic() -> tuple:
     treat, clean_action = random.choice(HEALINGS)
     bed = random.choice(BEDS)
 
-    # 히스토리 업데이트 및 저장
     history.append(selected_creature["name"])
     try:
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
@@ -277,7 +285,7 @@ JSON Schema:
         data = poll_until_done(data, max_wait_sec=60)
         output = data.get("output")
         raw_text = "".join(output) if isinstance(output, list) else str(output)
-        
+
         raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
         match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
         if match:
@@ -289,11 +297,23 @@ JSON Schema:
 
 
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
+    """[Flux 1.1 Pro Ultra] 초고해상도 3D 디테일 생성"""
+    quality_enhancer = "sharp focus, ultra high detail, clean composition, studio lighting, masterpiece"
+    final_prompt = f"{prompt}, {quality_enhancer}"
+
     data = post_with_retry(
-        "https://api.replicate.com/v1/models/black-forest-labs/flux-schnell/predictions",
-        {"input": {"prompt": prompt, "aspect_ratio": aspect_ratio, "output_format": "jpg"}}
+        "https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro-ultra/predictions",
+        {
+            "input": {
+                "prompt": final_prompt,
+                "aspect_ratio": aspect_ratio,
+                "output_format": "jpg",
+                "raw": False,
+                "safety_tolerance": 2,
+            }
+        }
     )
-    data = poll_until_done(data, max_wait_sec=90)
+    data = poll_until_done(data, max_wait_sec=120)
     output = data.get("output")
     image_url = output[0] if isinstance(output, list) else output
     if not image_url:
@@ -362,29 +382,102 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
     )
 
 
+# ---------------------------------------------------------------------------
+# [ROBUST] SFX 라이브러리 유틸리티 및 오디오 믹서
+# ---------------------------------------------------------------------------
+
+def _pick_random_file(folder_path: str) -> str:
+    if not os.path.isdir(folder_path):
+        return None
+    candidates = [
+        os.path.join(folder_path, f)
+        for f in os.listdir(folder_path)
+        if f.lower().endswith((".wav", ".mp3", ".flac", ".ogg", ".m4a"))
+    ]
+    return random.choice(candidates) if candidates else None
+
+
+def _has_any_sfx() -> bool:
+    """SFX 라이브러리에 파일이 1개라도 있는지 검사"""
+    if not os.path.isdir(SFX_LIBRARY_DIR):
+        return False
+    if _pick_random_file(BGM_LIBRARY_DIR):
+        return True
+    for categories in SCENE_SFX_MAP.values():
+        for cat in categories:
+            if _pick_random_file(os.path.join(SFX_LIBRARY_DIR, cat)):
+                return True
+    return False
+
+
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
-    print("🎬 씬별 맞춤 ASMR 사운드팩 + 자장가 BGM 믹싱 진행...")
-    
-    filter_complex = (
-        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
-        f"sine=f=528:r=44100,atrim=0:{total_sec},asetpts=PTS-STARTPTS[tone];"
-        "[tone]volume=0.015[tone_soft];"
-        "[pink][tone_soft]amix=inputs=2[bgm];"
-        
-        "anoisesrc=c=brown:r=44100:a=0.04,atrim=0:5,asetpts=PTS-STARTPTS,afade=t=out:st=4:d=1[sfx1];"
-        "sine=f=300:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.01,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1[sfx2];"
-        "sine=f=880:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.025,afade=t=in:st=0:d=0.5,afade=t=out:st=4:d=1[sfx3];"
-        "sine=f=220:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.02,afade=t=in:st=0:d=1[sfx4];"
-        
-        "[sfx1][sfx2][sfx3][sfx4]concat=n=4:v=0:a=1[all_sfx];"
-        "[bgm][all_sfx]amix=inputs=2:duration=first[aout]"
-    )
+    """
+    모노/스테레오 자동 변환 및 안전 리미터가 적용된 ASMR 믹싱 엔진
+    """
+    print("🎬 씬별 실제 ASMR SFX 사운드팩 믹싱 진행...")
+
+    if not _has_any_sfx():
+        print("⚠️ SFX 라이브러리가 비어있어 안전 합성 사운드로 자동 전환합니다.")
+        _generate_synthetic_fallback_soundtrack(video_path, total_sec, output_path)
+        return
+
+    num_scenes = int(total_sec / SCENE_DURATION)
+    inputs = ["-i", video_path]
+    filter_parts = []
+
+    # 1. BGM 트랙 세팅
+    bgm_path = _pick_random_file(BGM_LIBRARY_DIR)
+    if bgm_path:
+        inputs += ["-i", bgm_path]
+        filter_parts.append(
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+            f"atrim=0:{total_sec},asetpts=PTS-STARTPTS,volume=0.15,"
+            f"afade=t=in:st=0:d=1.5,afade=t=out:st={max(total_sec - 1.5, 0)}:d=1.5[bgm]"
+        )
+    else:
+        inputs += ["-f", "lavfi", "-i", f"anoisesrc=c=pink:r=44100:a=0.015:d={total_sec}"]
+        filter_parts.append(
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+            f"volume=0.15[bgm]"
+        )
+
+    # 2. 씬별 SFX 트랙 수집 및 딜레이 배치
+    sfx_labels = []
+    stream_cursor = 2
+    for scene_idx in range(1, num_scenes + 1):
+        offset_ms = int((scene_idx - 1) * SCENE_DURATION * 1000)
+        categories = SCENE_SFX_MAP.get(scene_idx, [])
+        for cat in categories:
+            sfx_file = _pick_random_file(os.path.join(SFX_LIBRARY_DIR, cat))
+            if sfx_file:
+                inputs += ["-i", sfx_file]
+                label = f"sfx{stream_cursor}"
+                filter_parts.append(
+                    f"[{stream_cursor}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
+                    f"atrim=0:{SCENE_DURATION},asetpts=PTS-STARTPTS,volume=0.35,"
+                    f"afade=t=in:st=0:d=0.3,afade=t=out:st={max(SCENE_DURATION - 0.5, 0)}:d=0.5,"
+                    f"adelay={offset_ms}|{offset_ms}[{label}]"
+                )
+                sfx_labels.append(f"[{label}]")
+                stream_cursor += 1
+
+    # 3. 믹싱 및 소리 깨짐 방지 리미터(alimiter) 적용
+    if sfx_labels:
+        mix_inputs = "[bgm]" + "".join(sfx_labels)
+        filter_parts.append(
+            f"{mix_inputs}amix=inputs={1 + len(sfx_labels)}:duration=first:normalize=0,"
+            f"alimiter=limit=0.95[aout]"
+        )
+    else:
+        filter_parts.append("[bgm]alimiter=limit=0.95[aout]")
+
+    filter_complex = ";".join(filter_parts)
 
     try:
         subprocess.run(
             [
                 "ffmpeg", "-y",
-                "-i", video_path,
+                *inputs,
                 "-filter_complex", filter_complex,
                 "-map", "0:v:0",
                 "-map", "[aout]",
@@ -397,23 +490,44 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
             check=True,
             capture_output=True,
         )
-    except Exception as e:
-        print(f"⚠️ 사운드 예외 ({e}), 안전 앰비언스 대체")
-        subprocess.run(
-            [
-                "ffmpeg", "-y",
-                "-i", video_path,
-                "-f", "lavfi", "-i", f"anoisesrc=c=pink:r=44100:a=0.02:d={total_sec}",
-                "-c:v", "copy",
-                "-c:a", "aac",
-                "-shortest",
-                output_path
-            ],
-            check=True,
-            capture_output=True
-        )
+        print(f"✅ 실제 SFX 사운드팩 믹싱 완료: {output_path} (레이어 {len(sfx_labels)}개 믹스)")
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        print(f"⚠️ SFX 믹싱 오류 ({err_msg[-300:]}), 합성 사운드로 자동 전환합니다.")
+        _generate_synthetic_fallback_soundtrack(video_path, total_sec, output_path)
 
-    print(f"✅ ASMR 사운드팩 믹싱 완료: {output_path}")
+
+def _generate_synthetic_fallback_soundtrack(video_path: str, total_sec: int, output_path: str):
+    """라이브러리가 비어있거나 실패했을 때의 안전망"""
+    filter_complex = (
+        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
+        f"sine=f=528:r=44100,atrim=0:{total_sec},asetpts=PTS-STARTPTS[tone];"
+        "[tone]volume=0.015[tone_soft];"
+        "[pink][tone_soft]amix=inputs=2[bgm];"
+        "anoisesrc=c=brown:r=44100:a=0.04,atrim=0:5,asetpts=PTS-STARTPTS,afade=t=out:st=4:d=1[sfx1];"
+        "sine=f=300:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.01,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1[sfx2];"
+        "sine=f=880:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.025,afade=t=in:st=0:d=0.5,afade=t=out:st=4:d=1[sfx3];"
+        "sine=f=220:r=44100,atrim=0:5,asetpts=PTS-STARTPTS,volume=0.02,afade=t=in:st=0:d=1[sfx4];"
+        "[sfx1][sfx2][sfx3][sfx4]concat=n=4:v=0:a=1[all_sfx];"
+        "[bgm][all_sfx]amix=inputs=2:duration=first[aout]"
+    )
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", video_path,
+            "-filter_complex", filter_complex,
+            "-map", "0:v:0",
+            "-map", "[aout]",
+            "-c:v", "copy",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-shortest",
+            output_path,
+        ],
+        check=True,
+        capture_output=True,
+    )
+    print(f"✅ 합성 사운드 폴백 완료: {output_path}")
 
 
 def send_telegram_preview(video_path: str, plan: dict):
@@ -446,7 +560,7 @@ def main():
     send_telegram_message(f"🐾 아기 환상종 숏폼 제작 시작!\n주제: '{TOPIC}'")
 
     plan = generate_scene_plan(TOPIC)
-    
+
     with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
 
