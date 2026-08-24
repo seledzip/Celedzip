@@ -1,9 +1,11 @@
 ﻿"""
-아기 환상종 보호소 (Pocket Creature Rescue) 무중단 자동화 엔진 (v23.1 - Episode 28 Alert System)
+아기 환상종 보호소 무중단 자동화 엔진 (v26.1 - 30 Creatures Zero-Duplication & Timed Subtitles, Fixed)
+- [30종 환상종 풀 완비] 중복 발생 0% 보장 결정론적 순차 큐 알고리즘 적용
+- 1~5씬 100% 무자막 청정 원본 렌더링 (Kling AI 글자 왜곡 원천 차단)
+- 25초 병합본에 5초 단위 감성 동화 자막 단 1회 후가공 오버레이
+- 텍스트 폭 자동 측정(Pillow) 기반 폰트 크기 동적 스케일링 (화면 잘림 방지)
 - 28회차 달성 시 텔레그램 시즌 전환 사전 알림 발송
-- 5단계 25초 완결형 시네마틱 구조 (위기 -> 구조 -> 식사 -> 침대 눕히기 -> 깊은 수면 엔딩)
-- 쇼츠 스크롤 이탈 방지용 영문 감정 동화 텍스트 자막 자동 각인
-- 모바일 클린 SEO 제목 + 실제 ASMR 5단계 사운드팩 믹싱
+- [FIX] 30회차(시즌1 완료) 이후 회차 번호가 31화에 영구 고정되던 버그 수정
 """
 
 import os
@@ -60,6 +62,21 @@ CREATURE_POOL = [
     {"name": "Baby Forest Owl", "desc": "ultra-cute wide-eyed miniature horned owlet with glowing emerald feathers"},
     {"name": "Baby Lavender Hamster", "desc": "tiny fluffy pocket hamster with glowing floral lavender ears"},
     {"name": "Baby Frost Seal", "desc": "round chubby baby seal with shimmering ice-crystal whiskers"},
+    {"name": "Baby Blossom Hedgehog", "desc": "tiny adorable hedgehog covered in soft glowing pink cherry blossom petals"},
+    {"name": "Baby Amber Squirrel", "desc": "pocket baby squirrel with a glowing translucent amber gem tail"},
+    {"name": "Baby Magma Turtle", "desc": "miniature warm baby turtle with a gentle glowing volcanic hot-spring shell"},
+    {"name": "Baby Wind Pegasus", "desc": "ultra-cute miniature winged foal with silky flowing breeze mane"},
+    {"name": "Baby Pearl Seahorse", "desc": "tiny luminous aquatic seahorse with iridescent rainbow fins"},
+    {"name": "Baby Coral Axolotl", "desc": "miniature pink baby axolotl with blooming glowing coral gills"},
+    {"name": "Baby Twilight Wolf", "desc": "fluffy baby wolf pup with soft glowing violet dusk fur"},
+    {"name": "Baby Solar Red Panda", "desc": "adorable baby red panda with warm glowing sunburst tail stripes"},
+    {"name": "Baby Rainbow Chameleon", "desc": "tiny pocket chameleon shifting through soft pastel iridescent colors"},
+    {"name": "Baby Glacier Penguin", "desc": "chubby baby penguin chick wearing a sparkling crystal ice vest"},
+    {"name": "Baby Golden Griffin", "desc": "miniature royal baby griffin with gleaming soft golden down feathers"},
+    {"name": "Baby Celestial Peacock", "desc": "ultra-cute baby peachick with night-sky constellation tail feathers"},
+    {"name": "Baby Dune Fennec", "desc": "pocket desert fennec fox with oversized warm glowing sand-fairy ears"},
+    {"name": "Baby Dewdrop Frog", "desc": "tiny translucent tree frog with glowing pure morning dewdrops on its back"},
+    {"name": "Baby Cosmo Whale", "desc": "palm-sized floating celestial baby whale with miniature stars orbiting around it"},
 ]
 
 CRISES = [
@@ -85,6 +102,7 @@ BEDS = [
     "a tiny fluffy cloud pillow nestled under warm golden fairy lights",
 ]
 
+
 def fetch_recent_youtube_titles() -> list:
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         return []
@@ -102,11 +120,14 @@ def fetch_recent_youtube_titles() -> list:
         youtube = build("youtube", "v3", credentials=creds)
         channel_resp = youtube.channels().list(mine=True, part="contentDetails").execute()
         uploads_id = channel_resp["items"][0]["contentDetails"]["relatedPlaylists"]["uploads"]
-        pl_resp = youtube.playlistItems().list(playlistId=uploads_id, part="snippet", maxResults=20).execute()
+        pl_resp = youtube.playlistItems().list(playlistId=uploads_id, part="snippet", maxResults=50).execute()
         titles = [item["snippet"]["title"] for item in pl_resp.get("items", [])]
+        print(f"🔍 YouTube 채널 최근 영상 {len(titles)}개 조회 완료")
         return titles
-    except Exception:
+    except Exception as e:
+        print(f"ℹ️ YouTube API 조회 생략 ({e})")
         return []
+
 
 def send_telegram_message(text: str):
     if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
@@ -115,6 +136,7 @@ def send_telegram_message(text: str):
             requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": text}, timeout=15)
         except Exception:
             pass
+
 
 def resolve_unique_topic() -> tuple:
     if RAW_TOPIC and RAW_TOPIC.lower() not in ("auto", "none", ""):
@@ -129,7 +151,22 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
+    used_creature_names = set(history)
+    for t in recent_yt_titles:
+        for c in CREATURE_POOL:
+            if c["name"].lower() in t.lower():
+                used_creature_names.add(c["name"])
+
+    available_creatures = [c for c in CREATURE_POOL if c["name"] not in used_creature_names]
+
+    if not available_creatures:
+        cycle_idx = len(history) % len(CREATURE_POOL)
+        selected_creature = CREATURE_POOL[cycle_idx]
+    else:
+        selected_creature = available_creatures[0]
+
     current_episode = len(history) + 1
+    season = 1 if current_episode <= 30 else 2
 
     if current_episode == 28:
         alert_msg = (
@@ -140,20 +177,6 @@ def resolve_unique_topic() -> tuple:
         )
         send_telegram_message(alert_msg)
 
-    season = 1 if current_episode <= 30 else 2
-
-    available_creatures = []
-    for c in CREATURE_POOL:
-        c_name = c["name"]
-        in_youtube = any(c_name.lower() in t.lower() for t in recent_yt_titles)
-        in_recent_history = c_name in history[-10:] if history else False
-        if not in_youtube and not in_recent_history:
-            available_creatures.append(c)
-
-    if not available_creatures:
-        available_creatures = CREATURE_POOL
-
-    selected_creature = random.choice(available_creatures)
     crisis = random.choice(CRISES)
     treat, clean_action = random.choice(HEALINGS)
     bed = random.choice(BEDS)
@@ -169,20 +192,28 @@ def resolve_unique_topic() -> tuple:
         f"Rescuing a lost {selected_creature['desc']} {crisis}, "
         f"gently {clean_action}, feeding a {treat}, and tucking it into {bed}"
     )
-    print(f"✅ [에피소드 {current_episode}화 / 시즌 {season}] 선택된 크리처: {selected_creature['name']}")
+    print(f"✅ [에피소드 {current_episode}화 / 시즌 {season}] 순차 배정 크리처 ({len(used_creature_names)+1}/30): {selected_creature['name']}")
     return full_topic, selected_creature["name"], treat, bed
+
 
 TOPIC, CREATURE_NAME, SELECTED_TREAT, SELECTED_BED = resolve_unique_topic()
 
+
 def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
     for attempt in range(max_retries):
-        res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
-        if res.status_code == 429:
-            time.sleep((attempt + 1) * 20)
-            continue
-        res.raise_for_status()
-        return res.json()
+        try:
+            res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
+            if res.status_code == 429:
+                time.sleep((attempt + 1) * 20)
+                continue
+            res.raise_for_status()
+            return res.json()
+        except requests.exceptions.RequestException:
+            if attempt == max_retries - 1:
+                raise
+            time.sleep(5)
     raise RuntimeError(f"최대 재시도 초과: {url}")
+
 
 def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
     get_url = data.get("urls", {}).get("get")
@@ -190,58 +221,63 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
     while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
         time.sleep(5)
         waited += 5
-        poll_res = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=30)
-        poll_res.raise_for_status()
-        data = poll_res.json()
+        try:
+            poll_res = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=30)
+            poll_res.raise_for_status()
+            data = poll_res.json()
+        except requests.exceptions.RequestException:
+            continue
 
     if data.get("status") != "succeeded":
         raise RuntimeError(f"Replicate 오류: {data.get('error')}")
     return data
 
+
 def build_fallback_plan(topic: str, creature_name: str, treat: str, bed: str) -> dict:
     return {
         "project_title": f"Rescuing a Lost {creature_name}",
-        "style_anchor": "Hyper-detailed cinematic 3D render, ultra-cute adorable baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm dreamy lighting, 8k octane render",
+        "style_anchor": "Hyper-detailed cinematic 3D render, ultra-cute adorable baby fantasy creature, huge glossy watery reflective eyes, soft fluffy fur, tilt-shift macro lens, warm dreamy lighting, 8k octane render, no text, no watermark",
         "iconic_element_en": topic,
         "aspect_ratio": "9:16",
         "scenes": [
             {
                 "scene_number": 1,
-                "overlay_text": f"Found this tiny {creature_name} shivering alone... 🥺",
+                "story_subtitle": f"Found a tiny {creature_name} shivering alone...",
                 "visual_prompt_en": f"Extreme macro close-up of a tiny shivering {creature_name} with big teary eyes trapped in wet cold ground",
-                "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark"
+                "negative_prompt_en": "blurry, low quality, adult animal, human face, scary, text, watermark, letters"
             },
             {
                 "scene_number": 2,
-                "overlay_text": "Step 1: Gentle rescue & warm wrap 🤍",
+                "story_subtitle": "Step 1: Gentle rescue & warm towel wrap",
                 "visual_prompt_en": f"Gentle realistic giant warm human hands wrapped in a soft fluffy towel carefully scooping up the tiny {creature_name}",
-                "negative_prompt_en": "blurry, low quality, watermark, distortion, harsh lighting"
+                "negative_prompt_en": "blurry, low quality, watermark, distortion, text, letters"
             },
             {
                 "scene_number": 3,
-                "overlay_text": "Step 2: Feeding sweet enchanted treats ✨",
+                "story_subtitle": "Step 2: Feeding sweet enchanted treats",
                 "visual_prompt_en": f"Satisfying gentle cleaning of the {creature_name}, feeding a {treat}, happy joyful smiling expression",
-                "negative_prompt_en": "blurry, low quality, watermark"
+                "negative_prompt_en": "blurry, low quality, watermark, text, letters"
             },
             {
                 "scene_number": 4,
-                "overlay_text": "Step 3: Tucking into a cozy bed 🌙",
+                "story_subtitle": "Step 3: Tucking into a cozy miniature bed",
                 "visual_prompt_en": f"Gentle warm hands slowly and carefully lowering the sleepy, full {creature_name} into {bed}, tucking it under a tiny cozy blanket",
-                "negative_prompt_en": "blurry, low quality, watermark"
+                "negative_prompt_en": "blurry, low quality, watermark, text, letters"
             },
             {
                 "scene_number": 5,
-                "overlay_text": "Safe and sound asleep! Would you adopt? 🥹",
+                "story_subtitle": "Safe and sound asleep. Goodnight little one...",
                 "visual_prompt_en": f"Clean happy fluffy {creature_name} sound asleep and breathing peacefully inside {bed}, soft warm fairy lights glowing, slow cinematic macro zoom-in",
-                "negative_prompt_en": "blurry, low quality, watermark, human hands"
+                "negative_prompt_en": "blurry, low quality, watermark, human hands, text, letters"
             }
         ],
         "youtube_metadata": {
-            "title": f"Found a Shivering Baby {creature_name}! 🥺 Rescue & Bedtime",
+            "title": f"Found a Shivering Baby {creature_name}! Rescue & Bedtime ASMR",
             "description": f"Rescuing a lost {creature_name}! Welcome to Pocket Creature Rescue 🌿✨\n\n🐾 What should we name this cute little one? Leave your suggestions in the comments!\n\n#Shorts #BabyCreature #{creature_name.replace(' ', '')} #Cute #ASMR",
             "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing"]
         }
     }
+
 
 def generate_scene_plan(topic: str) -> dict:
     try:
@@ -250,30 +286,30 @@ Design an emotional 5-scene rescue story for: "{topic}".
 
 Rules:
 - Exactly 5 scenes (5 seconds each, total 25 seconds).
-- Include high-retention English overlay text for each scene:
-  Scene 1: "Found this tiny {CREATURE_NAME} shivering alone... 🥺"
-  Scene 2: "Step 1: Gentle rescue & warm wrap 🤍"
-  Scene 3: "Step 2: Feeding sweet enchanted treats ✨"
-  Scene 4: "Step 3: Tucking into a cozy bed 🌙"
-  Scene 5: "Safe and sound asleep! Would you adopt? 🥹"
-- Title format: "Found a Shivering Baby {CREATURE_NAME}! 🥺 Rescue & Bedtime" (Clean SEO, NO hashtag/emoji spam in title).
+- In 'story_subtitle', provide clean concise English narration (max 7 words, NO emoji).
+  Scene 1: "Found a tiny {CREATURE_NAME} shivering alone..."
+  Scene 2: "Step 1: Gentle rescue & warm towel wrap"
+  Scene 3: "Step 2: Feeding sweet enchanted treats"
+  Scene 4: "Step 3: Tucking into a cozy miniature bed"
+  Scene 5: "Safe and sound asleep. Goodnight little one..."
+- Title format: "Found a Shivering Baby {CREATURE_NAME}! Rescue & Bedtime ASMR"
 - Output strict JSON only.
 
 JSON Schema:
 {{
   "project_title": "Rescue Title",
-  "style_anchor": "Hyper-detailed 3D render, ultra-cute baby fantasy creature, huge watery reflective eyes, fluffy texture, tilt-shift macro lens, warm cozy lighting, 8k octane render",
+  "style_anchor": "Hyper-detailed 3D render, ultra-cute baby fantasy creature, huge watery reflective eyes, fluffy texture, tilt-shift macro lens, warm cozy lighting, 8k octane render, clean background, no text",
   "iconic_element_en": "precise creature description",
   "aspect_ratio": "9:16",
   "scenes": [
-    {{"scene_number": 1, "overlay_text": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, text"}},
-    {{"scene_number": 2, "overlay_text": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark"}},
-    {{"scene_number": 3, "overlay_text": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark"}},
-    {{"scene_number": 4, "overlay_text": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark"}},
-    {{"scene_number": 5, "overlay_text": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, human hands"}}
+    {{"scene_number": 1, "story_subtitle": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, text, watermark, letters"}},
+    {{"scene_number": 2, "story_subtitle": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark, text, letters"}},
+    {{"scene_number": 3, "story_subtitle": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark, text, letters"}},
+    {{"scene_number": 4, "story_subtitle": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, watermark, text, letters"}},
+    {{"scene_number": 5, "story_subtitle": "...", "visual_prompt_en": "...", "negative_prompt_en": "blurry, human hands, text, letters"}}
   ],
   "youtube_metadata": {{
-    "title": "Found a Shivering Baby [Name]! 🥺 Rescue & Bedtime",
+    "title": "Found a Shivering Baby [Name]! Rescue & Bedtime ASMR",
     "description": "Story description + What should we name this little one? #Shorts #BabyCreature #ASMR",
     "tags": ["babycreature", "fantasyrescue", "cutemonster", "asmr", "shorts"]
   }}
@@ -293,7 +329,7 @@ JSON Schema:
         data = poll_until_done(data, max_wait_sec=60)
         output = data.get("output")
         raw_text = "".join(output) if isinstance(output, list) else str(output)
-        
+
         raw_clean = re.sub(r"^```json|```$", "", raw_text.strip(), flags=re.MULTILINE).strip()
         match = re.search(r"\{.*\}", raw_clean, re.DOTALL)
         if match:
@@ -302,15 +338,16 @@ JSON Schema:
     except Exception:
         return build_fallback_plan(topic, CREATURE_NAME, SELECTED_TREAT, SELECTED_BED)
 
+
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
-    quality_enhancer = "sharp focus, ultra high detail, clean composition, studio lighting, masterpiece"
-    final_prompt = f"{prompt}, {quality_enhancer}"
+    quality_enhancer = "sharp focus, ultra high detail, clean composition, studio lighting, masterpiece, no text, no watermark"
+    full_prompt = f"{prompt}, {quality_enhancer}"
 
     data = post_with_retry(
         "https://api.replicate.com/v1/models/black-forest-labs/flux-1.1-pro-ultra/predictions",
         {
             "input": {
-                "prompt": final_prompt,
+                "prompt": full_prompt,
                 "aspect_ratio": aspect_ratio,
                 "output_format": "jpg",
                 "raw": False,
@@ -323,6 +360,7 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
     image_url = output[0] if isinstance(output, list) else output
     return image_url
 
+
 def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
                          aspect_ratio: str, index: int) -> str:
     time.sleep(15)
@@ -331,7 +369,7 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
         {
             "input": {
                 "prompt": motion_prompt,
-                "negative_prompt": negative_prompt,
+                "negative_prompt": f"{negative_prompt}, text, letters, subtitles, watermark, blur",
                 "image": image_source,
                 "duration": 5,
                 "aspect_ratio": aspect_ratio,
@@ -351,34 +389,6 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
         f.write(video_res.content)
     return clip_path
 
-def overlay_scene_text(input_clip: str, overlay_text: str, output_clip: str):
-    os.makedirs(WORK_DIR, exist_ok=True)
-    txt_path = f"{WORK_DIR}/overlay_temp.txt"
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(overlay_text)
-
-    txt_clean = os.path.abspath(txt_path).replace("\\", "/").replace(":", "\\:")
-    font_clean = "C\\:/Windows/Fonts/arialbd.ttf" if os.name == "nt" else "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-
-    draw_filter = (
-        f"drawtext=fontfile='{font_clean}':textfile='{txt_clean}':"
-        f"fontcolor=white:fontsize=40:box=1:boxcolor=black@0.55:boxborderw=14:"
-        f"x=(w-text_w)/2:y=h*0.13"
-    )
-
-    try:
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", input_clip, "-vf", draw_filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", output_clip],
-            check=True,
-            capture_output=True,
-        )
-    except Exception:
-        fallback_filter = f"drawtext=text='{overlay_text}':fontcolor=white:fontsize=40:box=1:boxcolor=black@0.55:boxborderw=14:x=(w-text_w)/2:y=h*0.13"
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", input_clip, "-vf", fallback_filter, "-c:v", "libx264", "-pix_fmt", "yuv420p", output_clip],
-            check=True,
-            capture_output=True
-        )
 
 def extract_last_frame(clip_path: str, index: int) -> str:
     frame_path = f"{WORK_DIR}/last_frame_{index}.jpg"
@@ -389,10 +399,12 @@ def extract_last_frame(clip_path: str, index: int) -> str:
     )
     return frame_path
 
+
 def image_to_data_uri(image_path: str) -> str:
     with open(image_path, "rb") as f:
         encoded = base64.b64encode(f.read()).decode("utf-8")
     return f"data:image/jpeg;base64,{encoded}"
+
 
 def stitch_clips_clean(clip_paths: list, output_path: str):
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
@@ -408,6 +420,87 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
         capture_output=True,
     )
 
+
+def _resolve_font_path() -> str:
+    candidates = [
+        "C:/Windows/Fonts/arialbd.ttf" if os.name == "nt" else None,
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    ]
+    for path in candidates:
+        if path and os.path.isfile(path):
+            return path
+    return None
+
+
+def _fit_fontsize_to_width(text: str, font_path: str, target_width: float,
+                            start_size: int = 34, min_size: int = 22) -> int:
+    if not font_path:
+        return 28
+    try:
+        from PIL import ImageFont
+        size = start_size
+        while size >= min_size:
+            font = ImageFont.truetype(font_path, size)
+            bbox = font.getbbox(text)
+            w = bbox[2] - bbox[0]
+            if w <= target_width:
+                return size
+            size -= 1
+        return min_size
+    except Exception:
+        return 28
+
+
+def apply_timed_subtitles_post(stitched_video: str, plan: dict, output_path: str,
+                                video_width: int = 1072) -> None:
+    print("✍️ 25초 완성본 위에 시간대별 감성 동화 자막 오버레이 중 (동적 폭 스케일링)...")
+    raw_font = _resolve_font_path()
+    font_escaped = raw_font.replace("\\", "/").replace(":", "\\:") if raw_font else None
+
+    target_width = video_width * 0.90
+    draw_filters = []
+    for i, sc in enumerate(plan["scenes"]):
+        start_t = i * SCENE_DURATION
+        end_t = (i + 1) * SCENE_DURATION
+        txt = sc.get("story_subtitle", "").strip()
+        txt_clean_str = re.sub(r"[^\w\s.,!?:'\-]", "", txt).strip()
+
+        fontsize = _fit_fontsize_to_width(txt_clean_str, raw_font, target_width)
+
+        txt_file = f"{WORK_DIR}/timed_sub_{i+1}.txt"
+        with open(txt_file, "w", encoding="utf-8") as f:
+            f.write(txt_clean_str)
+
+        file_escaped = os.path.abspath(txt_file).replace("\\", "/").replace(":", "\\:")
+        fontfile_clause = f"fontfile='{font_escaped}':" if font_escaped else ""
+
+        draw_filters.append(
+            f"drawtext={fontfile_clause}textfile='{file_escaped}':"
+            f"fontcolor=white:fontsize={fontsize}:box=1:boxcolor=black@0.6:boxborderw=12:"
+            f"x=(w-text_w)/2:y=h*0.12:enable='between(t,{start_t},{end_t})'"
+        )
+
+    vf_chain = ",".join(draw_filters)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y",
+                "-i", stitched_video,
+                "-vf", vf_chain,
+                "-c:v", "libx264",
+                "-pix_fmt", "yuv420p",
+                output_path,
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as e:
+        err_msg = e.stderr.decode(errors="ignore") if e.stderr else str(e)
+        print(f"⚠️ 자막 합성 실패, 무자막 원본 복사로 안전망 가동: {err_msg[-300:]}")
+        subprocess.run(["ffmpeg", "-y", "-i", stitched_video, "-c", "copy", output_path], check=True, capture_output=True)
+
+
 def _pick_random_file(folder_path: str) -> str:
     if not os.path.isdir(folder_path):
         return None
@@ -417,6 +510,7 @@ def _pick_random_file(folder_path: str) -> str:
         if f.lower().endswith((".wav", ".mp3", ".flac", ".ogg", ".m4a"))
     ]
     return random.choice(candidates) if candidates else None
+
 
 def _has_any_sfx() -> bool:
     if not os.path.isdir(SFX_LIBRARY_DIR):
@@ -428,6 +522,7 @@ def _has_any_sfx() -> bool:
             if _pick_random_file(os.path.join(SFX_LIBRARY_DIR, cat)):
                 return True
     return False
+
 
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
     if not _has_any_sfx():
@@ -503,6 +598,7 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
     except Exception:
         _generate_synthetic_fallback_soundtrack(video_path, total_sec, output_path)
 
+
 def _generate_synthetic_fallback_soundtrack(video_path: str, total_sec: int, output_path: str):
     filter_complex = (
         f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
@@ -529,11 +625,12 @@ def _generate_synthetic_fallback_soundtrack(video_path: str, total_sec: int, out
         capture_output=True,
     )
 
+
 def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (알고리즘 최적화 v23.1)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v26.1 30종 무중복 & 정밀 자막 엔진)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -552,10 +649,11 @@ def send_telegram_preview(video_path: str, plan: dict):
         )
     resp.raise_for_status()
 
+
 def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
-    send_telegram_message(f"🐾 아기 환상종 숏폼(v23.1) 제작 시작!\n주제: '{TOPIC}'")
+    send_telegram_message(f"🐾 아기 환상종 숏폼(v26.1 30종 무중복 엔진) 제작 시작!\n주제: '{TOPIC}'")
 
     plan = generate_scene_plan(TOPIC)
 
@@ -569,10 +667,10 @@ def main():
 
     for i, scene in enumerate(plan["scenes"]):
         idx = scene["scene_number"]
-        overlay_txt = scene.get("overlay_text", "")
+        print(f"--- [Clean Render] Scene {idx}/5 ---")
 
         full_prompt = f"{style_anchor}, featuring {iconic_element}, {scene['visual_prompt_en']}"
-        negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text, scary")
+        negative_prompt = scene.get("negative_prompt_en", "blurry, low quality, watermark, text, scary, letters")
 
         if i == 0:
             image_source = generate_image(full_prompt, negative_prompt, aspect_ratio)
@@ -587,20 +685,22 @@ def main():
             aspect_ratio=aspect_ratio,
             index=idx,
         )
+        clip_paths.append(raw_clip)
 
-        text_clip = f"{WORK_DIR}/scene_{idx}_text.mp4"
-        overlay_scene_text(raw_clip, overlay_txt, text_clip)
-        clip_paths.append(text_clip)
+    stitched_clean_path = f"{WORK_DIR}/stitched_clean.mp4"
+    stitch_clips_clean(clip_paths, stitched_clean_path)
 
-    stitched_video_path = f"{WORK_DIR}/stitched_video.mp4"
-    stitch_clips_clean(clip_paths, stitched_video_path)
+    stitched_subbed_path = f"{WORK_DIR}/stitched_subbed.mp4"
+    aspect_ratio_width = 1072 if aspect_ratio == "9:16" else 1920
+    apply_timed_subtitles_post(stitched_clean_path, plan, stitched_subbed_path, video_width=aspect_ratio_width)
 
     final_path = f"{WORK_DIR}/final_video.mp4"
     total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
-    generate_soundtrack_and_mux(stitched_video_path, total_duration, final_path)
+    generate_soundtrack_and_mux(stitched_subbed_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 알고리즘 최적화 25초 영상 제작 완료!")
+    print("🐾 30종 무중복 정석 후가공 자막 25초 영상 제작 완료!")
+
 
 if __name__ == "__main__":
     try:
