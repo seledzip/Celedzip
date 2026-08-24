@@ -146,7 +146,7 @@ def resolve_unique_topic() -> tuple:
             "⚠️ [경고] YouTube API로 업로드 개수를 조회하지 못해 로컬 히스토리로 "
             "폴백했습니다. GitHub Actions 환경에서는 로컬 히스토리가 매번 초기화될 "
             "수 있어 크리처 중복 배정 위험이 있습니다. YOUTUBE_CLIENT_ID/SECRET/"
-            "REFRESH_TOKEN 설정을 확인해주세요."
+            "REFRESH_TOKEN 시크릿 설정을 확인해주세요."
         )
 
     target_idx = (current_episode - 1) % len(CREATURE_POOL)
@@ -228,9 +228,9 @@ def build_structured_rescue_plan(creature_name: str) -> dict:
                 "scene_number": 2,
                 "stage": "shelter_warm",
                 "story_subtitle": "Step 1: Gentle rescue to warm nursery",
-                "visual_prompt_en": f"INDOOR warm cozy wooden sanctuary nursery interior, wooden walls and warm fireplace glow visible, NO snow NO branches NO outdoor elements, gentle caring human hands wrapping the clean cute {creature_name} in a soft fluffy warm white towel, soft golden fairy lights in background, 8k octane render",
+                "visual_prompt_en": f"Cozy wooden cabin nursery interior, warm crackling fireplace glow, wooden log walls, soft golden fairy string lights, gentle caring human hands wrapping the clean cute {creature_name} in a soft fluffy warm white towel, warm indoor ambient light, 8k octane render",
                 "motion_prompt": "Gentle hands softly wrapping and patting the happy creature with a warm white towel, creature smiles",
-                "negative_prompt_en": "mud, dirt, brown paint, messy brush, paintbrush, outdoor, snow, branches, forest, winter, scary, text"
+                "negative_prompt_en": "mud, dirt, brown paint, messy brush, paintbrush, outdoor, snow, ice, branches, forest, winter, scary, text"
             },
             {
                 "scene_number": 3,
@@ -244,9 +244,9 @@ def build_structured_rescue_plan(creature_name: str) -> dict:
                 "scene_number": 4,
                 "stage": "bed",
                 "story_subtitle": "Step 3: Tucking into cozy miniature bed",
-                "visual_prompt_en": f"INDOOR bedroom scene, NO snow NO branches NO outdoor elements, gentle caring hands slowly lowering the clean sleepy fluffy {creature_name} into a miniature cozy wooden cradle bed lined with glowing magical moss and soft velvet pillow, warm golden fairy lights, indoor wooden nursery walls in background",
+                "visual_prompt_en": f"Warm wooden nursery bedroom interior at night, soft golden fairy lights glowing, gentle caring hands slowly lowering the clean sleepy fluffy {creature_name} into a miniature cozy wooden cradle bed lined with glowing magical moss and soft velvet pillow, cozy indoor ambient warmth",
                 "motion_prompt": "Slow cinematic camera lowering the sleepy creature under a tiny warm knitted blanket, creature yawns softly",
-                "negative_prompt_en": "mud, dirt, snow, forest branches, outdoor, winter, dark, text"
+                "negative_prompt_en": "mud, dirt, snow, ice, forest branches, outdoor, winter, dark, text"
             },
             {
                 "scene_number": 5,
