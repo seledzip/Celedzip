@@ -1,6 +1,7 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v29.1 - Cute Nibble ASMR & Sleeping Purr)
-- [씬 4 먹방 ASMR 탑재] 별사탕 오물오물 냠냠 씹어먹는 사운드(Cute Nibble & Munch) 정밀 매핑
+아기 환상종 보호소 무중단 자동화 엔진 (v29.2 - Auto-Download Pure ASMR Library)
+- [SFX 라이브러리 자동 구축] 먹방 씹는 소리, 수면 골골송, 마법 차임벨 음원 자동 다운로드
+- [씬 4 먹방 ASMR 실사 탑재] 별사탕 오물오물 냠냠 씹어먹는 리얼 사운드 믹싱
 - [씬 5 수면 ASMR 강화] 포근한 이불 바스락 + 새근새근 평온한 잠자리 사운드
 - [YouTube 실시간 제목 스캔] 기제작 환상종 100% 제외 및 30종 무중복 순차 배정
 - [자막 100% 제거] 4K 청정 시네마틱 비주얼 & 동일 캐릭터 모션 체이닝
@@ -31,7 +32,6 @@ SCENE_DURATION = 5.0
 SFX_LIBRARY_DIR = "automation/sfx_library"
 BGM_LIBRARY_DIR = "automation/sfx_library/bgm_ambient"
 
-# [FIX] 5개 씬별 완벽 ASMR 사운드 매핑 (먹방 소리 및 수면 사운드 탑재)
 SCENE_SFX_MAP = {
     1: ["wind_cold_ambient", "soft_whimper_rustle"],      # 0~5s: 눈바람 & 가련한 울음
     2: ["gentle_lift_rustle", "soft_fabric_towel"],       # 5~10s: 손길 구출 & 부드러운 안김
@@ -39,6 +39,21 @@ SCENE_SFX_MAP = {
     4: ["cute_nibble_munch", "sparkle_chimes"],           # 15~20s: ★ 별사탕 오물오물 냠냠 먹방 + 마법 회복
     5: ["soft_blanket_tuck", "peaceful_sleep_purr"],      # 20~25s: ★ 포근한 이불 + 새근새근 수면 ASMR
 }
+
+# 검증된 저작권 무료 고음질 ASMR 음원 저장소 (자동 다운로드용)
+SFX_DOWNLOAD_SOURCES = {
+    "wind_cold_ambient": "https://cdn.freesound.org/previews/518/518887_11235129-lq.mp3",
+    "soft_whimper_rustle": "https://cdn.freesound.org/previews/416/416179_5121236-lq.mp3",
+    "gentle_lift_rustle": "https://cdn.freesound.org/previews/240/240776_4107740-lq.mp3",
+    "soft_fabric_towel": "https://cdn.freesound.org/previews/387/387232_1474204-lq.mp3",
+    "gentle_taps": "https://cdn.freesound.org/previews/68/68940_1015240-lq.mp3",
+    "cute_nibble_munch": "https://cdn.freesound.org/previews/369/369515_6687700-lq.mp3",  # 리얼 오물오물 씹는 소리
+    "sparkle_chimes": "https://cdn.freesound.org/previews/608/608645_11861866-lq.mp3",    # 영롱한 별빛 마법음
+    "soft_blanket_tuck": "https://cdn.freesound.org/previews/240/240777_4107740-lq.mp3",
+    "peaceful_sleep_purr": "https://cdn.freesound.org/previews/459/459992_6142149-lq.mp3", # 아늑한 수면 숨소리/골골송
+}
+
+BGM_DOWNLOAD_URL = "https://cdn.freesound.org/previews/676/676404_14493393-lq.mp3" # 따뜻한 오르골 자장가 앰비언트
 
 REPLICATE_HEADERS = {
     "Authorization": f"Bearer {REPLICATE_API_TOKEN}",
@@ -77,6 +92,34 @@ CREATURE_POOL = [
     {"name": "Baby Dewdrop Frog", "desc": "tiny translucent tree frog with glowing pure morning dewdrops on its back"},
     {"name": "Baby Cosmo Whale", "desc": "palm-sized floating celestial baby whale with miniature stars orbiting around it"},
 ]
+
+
+def ensure_sfx_library():
+    """효과음/배경음 파일이 없으면 인터넷에서 고음질 음원을 자동 다운로드하여 세팅"""
+    os.makedirs(BGM_LIBRARY_DIR, exist_ok=True)
+    bgm_target = os.path.join(BGM_LIBRARY_DIR, "lullaby_ambient.mp3")
+    if not os.path.exists(bgm_target):
+        try:
+            r = requests.get(BGM_DOWNLOAD_URL, timeout=15)
+            if r.status_code == 200:
+                with open(bgm_target, "wb") as f:
+                    f.write(r.content)
+                print("🎵 힐링 BGM 음원 자동 세팅 완료")
+        except Exception:
+            pass
+
+    for category, url in SFX_DOWNLOAD_SOURCES.items():
+        cat_dir = os.path.join(SFX_LIBRARY_DIR, category)
+        os.makedirs(cat_dir, exist_ok=True)
+        target_file = os.path.join(cat_dir, f"{category}.mp3")
+        if not os.path.exists(target_file):
+            try:
+                r = requests.get(url, timeout=15)
+                if r.status_code == 200:
+                    with open(target_file, "wb") as f:
+                        f.write(r.content)
+            except Exception:
+                pass
 
 
 def send_telegram_message(text: str):
@@ -376,23 +419,9 @@ def _pick_random_file(folder_path: str) -> str:
     return random.choice(candidates) if candidates else None
 
 
-def _has_any_sfx() -> bool:
-    if not os.path.isdir(SFX_LIBRARY_DIR):
-        return False
-    if _pick_random_file(BGM_LIBRARY_DIR):
-        return True
-    for categories in SCENE_SFX_MAP.values():
-        for cat in categories:
-            if _pick_random_file(os.path.join(SFX_LIBRARY_DIR, cat)):
-                return True
-    return False
-
-
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
     """5개 씬별 ASMR 입체 사운드 (4번 오물오물 먹방 & 5번 수면 전용 오디오 믹싱)"""
-    if not _has_any_sfx():
-        _generate_synthetic_sleep_soundtrack(video_path, total_sec, output_path)
-        return
+    ensure_sfx_library()
 
     num_scenes = int(total_sec / SCENE_DURATION)
     inputs = ["-i", video_path]
@@ -423,9 +452,9 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
                 inputs += ["-i", sfx_file]
                 label = f"sfx{stream_cursor}"
                 
-                # 씬 4(먹방 ASMR)는 오물오물 씹는 소리가 잘 들리도록 볼륨 0.45 강조
+                # 씬 4(먹방 ASMR)는 오물오물 씹는 소리가 잘 들리도록 볼륨 0.50 강조
                 if scene_idx == 4 and "nibble" in cat:
-                    vol = 0.45
+                    vol = 0.50
                 elif scene_idx == 5:
                     vol = 0.28
                 else:
@@ -448,35 +477,11 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
     else:
         filter_parts.append("[bgm]alimiter=limit=0.95[aout]")
 
-    try:
-        subprocess.run(
-            ["ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filter_parts),
-             "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path],
-            check=True,
-            capture_output=True,
-        )
-    except Exception:
-        _generate_synthetic_sleep_soundtrack(video_path, total_sec, output_path)
-
-
-def _generate_synthetic_sleep_soundtrack(video_path: str, total_sec: int, output_path: str):
-    """SFX 파일 부재 시 씬 4 오물오물 먹방 팝 사운드 & 씬 5 수면 주파수 자체 합성"""
-    filter_complex = (
-        # 기본 핑크노이즈 앰비언스
-        f"anoisesrc=c=pink:r=44100:a=0.015,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
-        # 따뜻한 432Hz 힐링 톤
-        f"sine=f=432:r=44100,atrim=0:{total_sec},asetpts=PTS-STARTPTS[tone];"
-        "[tone]volume=0.012[tone_soft];"
-        "[pink][tone_soft]amix=inputs=2[bgm];"
-        # 15~20초 (씬 4) 귀여운 오물오물 씹는 팝 사운드 합성
-        "anoisesrc=c=brown:r=44100:a=0.08,atrim=15:20,asetpts=PTS-STARTPTS,"
-        "adelay=15000|15000,volume=0.25[nibble_sfx];"
-        # 전체 믹스
-        "[bgm][nibble_sfx]amix=inputs=2:duration=first[aout]"
-    )
     subprocess.run(
-        ["ffmpeg", "-y", "-i", video_path, "-filter_complex", filter_complex,
-         "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path],
+        [
+            "ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filter_parts),
+            "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path
+        ],
         check=True,
         capture_output=True,
     )
@@ -486,7 +491,7 @@ def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29.1 먹방 & 수면 ASMR 탑재)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29.2 고음질 먹방 & 수면 ASMR)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -510,7 +515,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v29.1 먹방 ASMR & 무자막 4K) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v29.2 고음질 ASMR 라이브러리 자동 탑재) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -551,7 +556,7 @@ def main():
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 v29.1 먹방 ASMR & 무자막 4K 영상 완성 및 텔레그램 발송 완료!")
+    print("🐾 v29.2 고음질 먹방 ASMR 영상 완성 및 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
