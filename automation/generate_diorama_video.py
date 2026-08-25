@@ -1,10 +1,9 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v29 - YouTube Live Scan Zero-Duplication & Pure Visual)
-- [YouTube 실시간 제목 스캔] 채널에 이미 올라간 환상종은 무조건 100% 제외
-- [30종 미등록 큐] 유튜브에 아직 없는 환상종만 순서대로 골라서 제작
-- [자막 100% 제거] 4K 청정 시네마틱 비주얼
-- [캐릭터 100% 일치] 씬 1 원본에서 씬 5 침대까지 동일 환상종 모션 체이닝
-- [5단계 완결 서사] 조난 -> 손길 구조 -> 타월 케어 -> 별빛 먹이(활력 회복) -> 침대 수면
+아기 환상종 보호소 무중단 자동화 엔진 (v29.1 - Cute Nibble ASMR & Sleeping Purr)
+- [씬 4 먹방 ASMR 탑재] 별사탕 오물오물 냠냠 씹어먹는 사운드(Cute Nibble & Munch) 정밀 매핑
+- [씬 5 수면 ASMR 강화] 포근한 이불 바스락 + 새근새근 평온한 잠자리 사운드
+- [YouTube 실시간 제목 스캔] 기제작 환상종 100% 제외 및 30종 무중복 순차 배정
+- [자막 100% 제거] 4K 청정 시네마틱 비주얼 & 동일 캐릭터 모션 체이닝
 """
 
 import os
@@ -32,12 +31,13 @@ SCENE_DURATION = 5.0
 SFX_LIBRARY_DIR = "automation/sfx_library"
 BGM_LIBRARY_DIR = "automation/sfx_library/bgm_ambient"
 
+# [FIX] 5개 씬별 완벽 ASMR 사운드 매핑 (먹방 소리 및 수면 사운드 탑재)
 SCENE_SFX_MAP = {
-    1: ["wind_cold_ambient", "soft_whimper_rustle"],
-    2: ["gentle_lift_rustle", "soft_fabric_towel"],
-    3: ["soft_fabric_towel", "gentle_taps"],
-    4: ["sparkle_chimes", "water_drops"],
-    5: ["soft_blanket_tuck", "sparkle_chimes"],
+    1: ["wind_cold_ambient", "soft_whimper_rustle"],      # 0~5s: 눈바람 & 가련한 울음
+    2: ["gentle_lift_rustle", "soft_fabric_towel"],       # 5~10s: 손길 구출 & 부드러운 안김
+    3: ["soft_fabric_towel", "gentle_taps"],              # 10~15s: 수건 케어 & 보송보송 닦기
+    4: ["cute_nibble_munch", "sparkle_chimes"],           # 15~20s: ★ 별사탕 오물오물 냠냠 먹방 + 마법 회복
+    5: ["soft_blanket_tuck", "peaceful_sleep_purr"],      # 20~25s: ★ 포근한 이불 + 새근새근 수면 ASMR
 }
 
 REPLICATE_HEADERS = {
@@ -89,7 +89,6 @@ def send_telegram_message(text: str):
 
 
 def get_all_uploaded_creature_names() -> set:
-    """유튜브 채널의 모든 영상을 스캔하여 이미 업로드된 환상종 이름을 집합으로 반환"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         return set()
     try:
@@ -150,19 +149,14 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
-    # 유튜브에 업로드된 것 + 로컬 히스토리 결합
     all_used_creatures = uploaded_creatures.union(set(history))
-
-    # 30종 중 아직 안 만들어진 환상종만 필터링
     available_creatures = [c for c in CREATURE_POOL if c["name"] not in all_used_creatures]
 
     if not available_creatures:
-        # 30종 완주 시 알림 및 1번부터 다시 순환
         selected_creature = CREATURE_POOL[0]
         current_episode = len(all_used_creatures) + 1
         print("🎉 30종 모든 아기 환상종 제작이 완료되었습니다! 2회차 루프를 시작합니다.")
     else:
-        # 아직 안 만들어진 첫 번째 환상종을 순서대로 선택!
         selected_creature = available_creatures[0]
         current_episode = len(all_used_creatures) + 1
 
@@ -395,6 +389,7 @@ def _has_any_sfx() -> bool:
 
 
 def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: str):
+    """5개 씬별 ASMR 입체 사운드 (4번 오물오물 먹방 & 5번 수면 전용 오디오 믹싱)"""
     if not _has_any_sfx():
         _generate_synthetic_sleep_soundtrack(video_path, total_sec, output_path)
         return
@@ -427,11 +422,19 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
             if sfx_file:
                 inputs += ["-i", sfx_file]
                 label = f"sfx{stream_cursor}"
-                vol = 0.28 if scene_idx == 5 else 0.35
+                
+                # 씬 4(먹방 ASMR)는 오물오물 씹는 소리가 잘 들리도록 볼륨 0.45 강조
+                if scene_idx == 4 and "nibble" in cat:
+                    vol = 0.45
+                elif scene_idx == 5:
+                    vol = 0.28
+                else:
+                    vol = 0.35
+
                 filter_parts.append(
                     f"[{stream_cursor}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
                     f"atrim=0:{SCENE_DURATION},asetpts=PTS-STARTPTS,volume={vol},"
-                    f"afade=t=in:st=0:d=0.3,afade=t=out:st={max(SCENE_DURATION - 0.5, 0)}:d=0.5,"
+                    f"afade=t=in:st=0:d=0.2,afade=t=out:st={max(SCENE_DURATION - 0.5, 0)}:d=0.5,"
                     f"adelay={offset_ms}|{offset_ms}[{label}]"
                 )
                 sfx_labels.append(f"[{label}]")
@@ -457,13 +460,19 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
 
 
 def _generate_synthetic_sleep_soundtrack(video_path: str, total_sec: int, output_path: str):
+    """SFX 파일 부재 시 씬 4 오물오물 먹방 팝 사운드 & 씬 5 수면 주파수 자체 합성"""
     filter_complex = (
+        # 기본 핑크노이즈 앰비언스
         f"anoisesrc=c=pink:r=44100:a=0.015,atrim=0:{total_sec},asetpts=PTS-STARTPTS[pink];"
+        # 따뜻한 432Hz 힐링 톤
         f"sine=f=432:r=44100,atrim=0:{total_sec},asetpts=PTS-STARTPTS[tone];"
         "[tone]volume=0.012[tone_soft];"
         "[pink][tone_soft]amix=inputs=2[bgm];"
-        f"anoisesrc=c=brown:r=44100:a=0.03,atrim=0:{total_sec},asetpts=PTS-STARTPTS,volume=0.18[sfx];"
-        "[bgm][sfx]amix=inputs=2:duration=first[aout]"
+        # 15~20초 (씬 4) 귀여운 오물오물 씹는 팝 사운드 합성
+        "anoisesrc=c=brown:r=44100:a=0.08,atrim=15:20,asetpts=PTS-STARTPTS,"
+        "adelay=15000|15000,volume=0.25[nibble_sfx];"
+        # 전체 믹스
+        "[bgm][nibble_sfx]amix=inputs=2:duration=first[aout]"
     )
     subprocess.run(
         ["ffmpeg", "-y", "-i", video_path, "-filter_complex", filter_complex,
@@ -477,7 +486,7 @@ def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29 YouTube 실시간 무중복 & 청정 ASMR)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29.1 먹방 & 수면 ASMR 탑재)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -501,7 +510,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v29 YouTube 실시간 무중복 스캔) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v29.1 먹방 ASMR & 무자막 4K) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -513,7 +522,6 @@ def main():
     aspect_ratio = plan.get("aspect_ratio", "9:16")
     clip_paths = []
 
-    # 1~5씬 완전 연속 모션 체이닝 (씬 1의 원본 환상종이 씬 5 침대까지 100% 동일 유지)
     for i, scene in enumerate(plan["scenes"]):
         idx = scene["scene_number"]
         print(f"\n🎬 [씬 {idx}/5 - {scene['title']}] 렌더링 중...")
@@ -543,7 +551,7 @@ def main():
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 v29 무자막 4K 힐링 ASMR 영상 완성 및 텔레그램 발송 완료!")
+    print("🐾 v29.1 먹방 ASMR & 무자막 4K 영상 완성 및 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
