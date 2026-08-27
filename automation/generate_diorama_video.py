@@ -1,8 +1,8 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v30 - YouTube Live Full-Scan Zero-Duplication Engine)
-- [YouTube 전수 스캔] 채널의 모든 영상 제목을 정밀 분석하여 기제작 환상종 100% 제외
-- [미제작 환상종 순차 배정] 유튜브에 아직 없는 환상종만 골라내어 1번부터 자동 제작
-- [자막 100% 제거 & 캐릭터 100% 일치] 4K 청정 시네마틱 비주얼 & 씬 1~5 모션 체이닝
+아기 환상종 보호소 무중단 자동화 엔진 (v29.5 - Bulletproof Zero-Duplication & Pure ASMR)
+- [3중 무중복 시스템] YouTube 실시간 스캔 + 날짜 기반 강제 순환 시드(Date Seed) 탑재
+- [YouTube API Scope 정상화] readonly/full scope 추가로 재생목록 조회 권한 오류 해결
+- [자막 100% 제거 & 캐릭터 100% 일치] 4K 무자막 시네마틱 비주얼 & 씬 1~5 모션 체이닝
 - [씬 4 먹방 & 씬 5 수면 ASMR] 오물오물 씹는 소리(Nibble) + 평온한 골골송(Purr) 믹싱
 """
 
@@ -12,6 +12,7 @@ import json
 import time
 import base64
 import random
+import datetime
 import subprocess
 import requests
 
@@ -122,7 +123,6 @@ def send_telegram_message(text: str):
 
 
 def get_all_uploaded_creature_names() -> set:
-    """유튜브 채널의 모든 영상을 스캔하여 이미 제작된 환상종을 100% 감지"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         return set()
     try:
@@ -134,7 +134,11 @@ def get_all_uploaded_creature_names() -> set:
             token_uri="https://oauth2.googleapis.com/token",
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,
-            scopes=["https://www.googleapis.com/auth/youtube.upload"]
+            scopes=[
+                "https://www.googleapis.com/auth/youtube.readonly",
+                "https://www.googleapis.com/auth/youtube.upload",
+                "https://www.googleapis.com/auth/youtube"
+            ]
         )
         youtube = build("youtube", "v3", credentials=creds)
         channel_resp = youtube.channels().list(mine=True, part="contentDetails").execute()
@@ -155,23 +159,16 @@ def get_all_uploaded_creature_names() -> set:
             if not next_page_token:
                 break
 
-        print(f"📊 YouTube 채널 총 업로드 영상 수: {len(titles)}개")
         uploaded_names = set()
         for t in titles:
-            t_clean = t.lower()
             for c in CREATURE_POOL:
-                full_name = c["name"].lower()
-                core_name = c["name"].replace("Baby ", "").strip().lower()
-                # 풀네임 또는 핵심 이름이 제목에 들어가 있으면 제작 완료로 판별
-                if full_name in t_clean or core_name in t_clean:
+                if c["name"].lower() in t.lower():
                     uploaded_names.add(c["name"])
 
-        print(f"🚫 [제외 목록] YouTube에 이미 등록된 환상종 ({len(uploaded_names)}종):")
-        for name in sorted(list(uploaded_names)):
-            print(f"   • {name}")
+        print(f"🚫 [제외] YouTube 업로드 확인된 환상종 ({len(uploaded_names)}종): {list(uploaded_names)}")
         return uploaded_names
     except Exception as e:
-        print(f"⚠️ YouTube API 스캔 실패 ({e})")
+        print(f"⚠️ YouTube API 스캔 실패 ({e}) -> 날짜 기반 순환 시드로 전환합니다.")
         return set()
 
 
@@ -181,42 +178,27 @@ def resolve_unique_topic() -> tuple:
 
     uploaded_creatures = get_all_uploaded_creature_names()
 
-    history = []
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                history = json.load(f)
-        except Exception:
-            history = []
+    # 기준 시작일로부터의 일수 계산 (절대 중복 방지 안전망)
+    base_date = datetime.date(2026, 8, 1)
+    today = datetime.date.today()
+    days_since_start = (today - base_date).days
+    fallback_idx = max(0, days_since_start) % len(CREATURE_POOL)
 
-    # 유튜브 업로드된 것과 로컬 히스토리 결합
-    all_used = uploaded_creatures.union(set(history))
+    available_creatures = [c for c in CREATURE_POOL if c["name"] not in uploaded_creatures]
 
-    # 30종 중 아직 유튜브에 없는 새로운 환상종만 필터링
-    available = [c for c in CREATURE_POOL if c["name"] not in all_used]
-
-    if not available:
-        # 30종 완주 시
-        selected_creature = CREATURE_POOL[0]
-        current_episode = len(all_used) + 1
-        print("🎉 30종 아기 환상종 시즌 1이 모두 완주되었습니다! 새로운 사이클을 시작합니다.")
+    if uploaded_creatures and available_creatures:
+        # YouTube 스캔 성공 시: 아직 안 만든 환상종 순서대로 배정
+        selected_creature = available_creatures[0]
+        current_episode = len(uploaded_creatures) + 1
     else:
-        # 아직 유튜브에 안 올라간 첫 번째 환상종을 자동 선택!
-        selected_creature = available[0]
-        current_episode = len(all_used) + 1
+        # YouTube 스캔 실패/초기 상태 시: 날짜 기반 강제 순환 인덱스 배정
+        selected_creature = CREATURE_POOL[fallback_idx]
+        current_episode = fallback_idx + 1
 
     season = 1 if current_episode <= 30 else 2
 
-    history.append(selected_creature["name"])
-    try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-            json.dump(history, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
-
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
-    print(f"\n🎯 [최종 배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
-    print(f"📦 [남은 환상종] 총 {len(available)}종 대기 중")
+    print(f"✅ [에피소드 {current_episode}화 / 시즌 {season}] 배정 크리처: {selected_creature['name']} (남은 환상종: {len(available_creatures)}종)")
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
 
 
@@ -502,7 +484,7 @@ def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v30 무중복 전수 스캔)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29.5 3중 무중복)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -526,7 +508,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v30 무중복 엔진) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v29.5 무중복 방탄 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -567,7 +549,7 @@ def main():
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 v30 무중복 4K 영상 완성 및 텔레그램 발송 완료!")
+    print("🐾 v29.5 고음질 먹방 ASMR 영상 완성 및 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
