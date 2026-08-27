@@ -1,9 +1,8 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v30 - YouTube Live Full-Scan Zero-Duplication Engine)
-- [YouTube 전수 스캔] 채널의 모든 영상 제목을 정밀 분석하여 기제작 환상종 100% 제외
-- [미제작 환상종 순차 배정] 유튜브에 아직 없는 환상종만 골라내어 1번부터 자동 제작
-- [자막 100% 제거 & 캐릭터 100% 일치] 4K 청정 시네마틱 비주얼 & 씬 1~5 모션 체이닝
-- [씬 4 먹방 & 씬 5 수면 ASMR] 오물오물 씹는 소리(Nibble) + 평온한 골골송(Purr) 믹싱
+아기 환상종 보호소 무중단 자동화 엔진 (v31 - Pure Body Aura & Crisp ASMR Munching)
+- [비주얼 개선] 씬 4 눈 레이저 발광 100% 제거 -> 몸을 감싸는 황금빛 오라(Swirling Golden Body Aura)로 변경
+- [ASMR 대폭 강화] 씬 4 오물오물 씹는 소리(Nibble & Munch ASMR) 리듬형 펄스 합성 & 볼륨 부스팅
+- [3중 무중복] YouTube 실시간 전수 스캔 기반 중복 방지
 """
 
 import os
@@ -84,21 +83,22 @@ def ensure_sfx_library():
     if not os.path.exists(bgm_target) or os.path.getsize(bgm_target) < 1000:
         subprocess.run(
             ["ffmpeg", "-y", "-f", "lavfi",
-             "-i", "sine=f=432:r=44100:d=25,volume=0.03,afade=t=in:st=0:d=2,afade=t=out:st=22:d=3",
+             "-i", "sine=f=432:r=44100:d=25,volume=0.025,afade=t=in:st=0:d=2,afade=t=out:st=22:d=3",
              "-c:a", "pcm_s16le", bgm_target],
             check=True, capture_output=True
         )
 
+    # 선명한 ASMR 저작음(오물오물 씹는 소리) 및 앰비언트 합성
     sfx_synth_map = {
-        "wind_cold_ambient": "anoisesrc=c=pink:r=44100:a=0.04:d=5,lowpass=f=800,volume=0.4",
+        "wind_cold_ambient": "anoisesrc=c=pink:r=44100:a=0.04:d=5,lowpass=f=800,volume=0.35",
         "soft_whimper_rustle": "sine=f=520:r=44100:d=5,volume=0.02,afade=t=in:st=0:d=1",
         "gentle_lift_rustle": "anoisesrc=c=brown:r=44100:a=0.05:d=5,highpass=f=200,volume=0.3",
         "soft_fabric_towel": "anoisesrc=c=pink:r=44100:a=0.03:d=5,volume=0.35,afade=t=in:st=0:d=0.5",
         "gentle_taps": "anoisesrc=c=brown:r=44100:a=0.06:d=5,volume=0.3",
-        "cute_nibble_munch": "anoisesrc=c=brown:r=44100:a=0.12:d=5,highpass=f=400,lowpass=f=3500,volume=0.55",
-        "sparkle_chimes": "sine=f=1200:r=44100:d=5,volume=0.025,afade=t=in:st=0:d=0.5",
+        "cute_nibble_munch": "anoisesrc=c=white:r=44100:d=5,bandpass=f=2400:w=1400,tremolo=f=4.5:d=0.92,volume=1.4,lowpass=f=3800",
+        "sparkle_chimes": "sine=f=1600:r=44100:d=5,tremolo=f=6:d=0.75,volume=0.035,afade=t=in:st=0.3:d=0.8",
         "soft_blanket_tuck": "anoisesrc=c=pink:r=44100:a=0.04:d=5,lowpass=f=600,volume=0.3",
-        "peaceful_sleep_purr": "sine=f=180:r=44100:d=5,volume=0.04,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1",
+        "peaceful_sleep_purr": "sine=f=160:r=44100:d=5,volume=0.04,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1",
     }
 
     for cat, lavfi_filter in sfx_synth_map.items():
@@ -122,7 +122,6 @@ def send_telegram_message(text: str):
 
 
 def get_all_uploaded_creature_names() -> set:
-    """유튜브 채널의 모든 영상을 스캔하여 이미 제작된 환상종을 100% 감지"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         return set()
     try:
@@ -155,20 +154,16 @@ def get_all_uploaded_creature_names() -> set:
             if not next_page_token:
                 break
 
-        print(f"📊 YouTube 채널 총 업로드 영상 수: {len(titles)}개")
         uploaded_names = set()
         for t in titles:
             t_clean = t.lower()
             for c in CREATURE_POOL:
                 full_name = c["name"].lower()
                 core_name = c["name"].replace("Baby ", "").strip().lower()
-                # 풀네임 또는 핵심 이름이 제목에 들어가 있으면 제작 완료로 판별
                 if full_name in t_clean or core_name in t_clean:
                     uploaded_names.add(c["name"])
 
-        print(f"🚫 [제외 목록] YouTube에 이미 등록된 환상종 ({len(uploaded_names)}종):")
-        for name in sorted(list(uploaded_names)):
-            print(f"   • {name}")
+        print(f"🚫 [제외 목록] YouTube 등록 확인된 환상종 ({len(uploaded_names)}종): {list(uploaded_names)}")
         return uploaded_names
     except Exception as e:
         print(f"⚠️ YouTube API 스캔 실패 ({e})")
@@ -189,19 +184,13 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
-    # 유튜브 업로드된 것과 로컬 히스토리 결합
     all_used = uploaded_creatures.union(set(history))
-
-    # 30종 중 아직 유튜브에 없는 새로운 환상종만 필터링
     available = [c for c in CREATURE_POOL if c["name"] not in all_used]
 
     if not available:
-        # 30종 완주 시
         selected_creature = CREATURE_POOL[0]
         current_episode = len(all_used) + 1
-        print("🎉 30종 아기 환상종 시즌 1이 모두 완주되었습니다! 새로운 사이클을 시작합니다.")
     else:
-        # 아직 유튜브에 안 올라간 첫 번째 환상종을 자동 선택!
         selected_creature = available[0]
         current_episode = len(all_used) + 1
 
@@ -216,7 +205,6 @@ def resolve_unique_topic() -> tuple:
 
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
     print(f"\n🎯 [최종 배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
-    print(f"📦 [남은 환상종] 총 {len(available)}종 대기 중")
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
 
 
@@ -274,7 +262,7 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
                     "Slow cinematic macro zoom on the shivering creature trembling in the cold wind, "
                     "looking up with big sad watery blinking eyes asking for help"
                 ),
-                "negative_prompt_en": "blurry, human face, mud, brown paint, dirt, text, watermark, adult animal"
+                "negative_prompt_en": "blurry, human face, mud, brown paint, dirt, text, watermark, adult animal, glowing eyes"
             },
             {
                 "scene_number": 2,
@@ -298,13 +286,14 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
             },
             {
                 "scene_number": 4,
-                "title": "Feeding Starlight Treat & Revitalizing Joy",
+                "title": "Feeding Starlight Treat & Swirling Body Aura",
                 "motion_prompt": (
                     "A glowing sparkling golden starlight candy treat is gently fed to this exact creature, "
-                    "as it happily nibbles the treat, sparkling magical golden fairy dust illuminates its body, "
-                    "its eyes glow with vibrant energy and its face lights up with an ecstatic happy beaming smile"
+                    "as it happily nibbles and chews the sweet treat with cute mouth movements, "
+                    "a soft magical shimmering golden light aura gently swirls and wraps around its fluffy body, "
+                    "natural cute sparkling eyes with no laser beam, face glowing with joy and an ecstatic beaming smile"
                 ),
-                "negative_prompt_en": "sad expression, brown liquid, mud, dirty bottle, changing creature, text, watermark"
+                "negative_prompt_en": "glowing eyes, laser eyes, light beams from eyes, flashlight eyes, white eyes, eye lasers, sad expression, brown liquid, mud, dirty bottle, changing creature, text, watermark"
             },
             {
                 "scene_number": 5,
@@ -313,7 +302,7 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
                     "Gentle hands carefully tuck the now happy, clean and sleepy creature into a miniature warm wooden cradle bed "
                     "under a tiny soft knitted blanket, the creature gently closes its eyes and breathes peacefully into sweet dreams"
                 ),
-                "negative_prompt_en": "awake, open eyes, falling, mud, snow, outdoor, branches, animal morphing, text"
+                "negative_prompt_en": "awake, open eyes, falling, glowing eyes, mud, snow, outdoor, branches, animal morphing, text"
             }
         ],
         "youtube_metadata": {
@@ -353,7 +342,7 @@ def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: 
         {
             "input": {
                 "prompt": motion_prompt,
-                "negative_prompt": f"{negative_prompt}, text, letters, subtitles, watermark, blur, brown mud, paintbrush, changing animal species",
+                "negative_prompt": f"{negative_prompt}, text, letters, subtitles, watermark, blur, brown mud, paintbrush, changing animal species, laser eyes, glowing eyes",
                 "image": image_source,
                 "duration": 5,
                 "aspect_ratio": aspect_ratio,
@@ -426,13 +415,13 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
         inputs += ["-i", bgm_path]
         filter_parts.append(
             f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
-            f"atrim=0:{total_sec},asetpts=PTS-STARTPTS,volume=0.15,"
+            f"atrim=0:{total_sec},asetpts=PTS-STARTPTS,volume=0.10,"
             f"afade=t=in:st=0:d=1.5,afade=t=out:st={max(total_sec - 2.5, 0)}:d=2.5[bgm]"
         )
     else:
         inputs += ["-f", "lavfi", "-i", f"anoisesrc=c=pink:r=44100:a=0.012:d={total_sec}"]
         filter_parts.append(
-            f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.15[bgm]"
+            f"[1:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,volume=0.10[bgm]"
         )
 
     sfx_labels = []
@@ -446,12 +435,15 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
                 inputs += ["-i", sfx_file]
                 label = f"sfx{stream_cursor}"
 
+                # 씬 4 먹방 ASMR 볼륨 극대화 (1.4배)
                 if scene_idx == 4 and "nibble" in cat:
+                    vol = 1.40
+                elif scene_idx == 4 and "sparkle" in cat:
                     vol = 0.50
                 elif scene_idx == 5:
-                    vol = 0.28
-                else:
                     vol = 0.35
+                else:
+                    vol = 0.40
 
                 filter_parts.append(
                     f"[{stream_cursor}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,"
@@ -502,7 +494,7 @@ def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v30 무중복 전수 스캔)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v31 바디오라 & 씹는 ASMR 극대화)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -526,7 +518,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v30 무중복 엔진) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v31 바디오라 & ASMR 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -567,7 +559,7 @@ def main():
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 v30 무중복 4K 영상 완성 및 텔레그램 발송 완료!")
+    print("🐾 v31 바디오라 & 씹는 ASMR 영상 완성 및 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
