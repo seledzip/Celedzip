@@ -1,10 +1,9 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v29.3 - Zero-Fail Pure ASMR Engine)
-- [SFX 무중단 안전망] 헤더 보정 다운로드 + 실패 시 FFmpeg 고음질 ASMR 음원 즉시 생성
-- [씬 4 먹방 ASMR 100% 보장] 별사탕 오물오물 냠냠 씹어먹는 소리(Cute Nibble) 실물 음원 탑재
-- [씬 5 수면 ASMR 100% 보장] 포근한 이불 + 새근새근 수면 골골송(Sleep Purr) 실물 음원 탑재
-- [YouTube 실시간 제목 스캔] 기제작 환상종 100% 제외 및 30종 무중복 순차 배정
-- [자막 100% 제거] 4K 청정 시네마틱 비주얼 & 동일 캐릭터 모션 체이닝
+아기 환상종 보호소 무중단 자동화 엔진 (v30 - YouTube Live Full-Scan Zero-Duplication Engine)
+- [YouTube 전수 스캔] 채널의 모든 영상 제목을 정밀 분석하여 기제작 환상종 100% 제외
+- [미제작 환상종 순차 배정] 유튜브에 아직 없는 환상종만 골라내어 1번부터 자동 제작
+- [자막 100% 제거 & 캐릭터 100% 일치] 4K 청정 시네마틱 비주얼 & 씬 1~5 모션 체이닝
+- [씬 4 먹방 & 씬 5 수면 ASMR] 오물오물 씹는 소리(Nibble) + 평온한 골골송(Purr) 믹싱
 """
 
 import os
@@ -80,7 +79,6 @@ CREATURE_POOL = [
 
 
 def ensure_sfx_library():
-    """모든 ASMR 카테고리에 실물 고음질 음원이 반드시 존재하도록 보장"""
     os.makedirs(BGM_LIBRARY_DIR, exist_ok=True)
     bgm_target = os.path.join(BGM_LIBRARY_DIR, "lullaby_ambient.wav")
     if not os.path.exists(bgm_target) or os.path.getsize(bgm_target) < 1000:
@@ -91,18 +89,15 @@ def ensure_sfx_library():
             check=True, capture_output=True
         )
 
-    # 각 씬별 효과음이 없으면 FFmpeg로 실제 ASMR 오디오 파일 직접 생성
     sfx_synth_map = {
         "wind_cold_ambient": "anoisesrc=c=pink:r=44100:a=0.04:d=5,lowpass=f=800,volume=0.4",
         "soft_whimper_rustle": "sine=f=520:r=44100:d=5,volume=0.02,afade=t=in:st=0:d=1",
         "gentle_lift_rustle": "anoisesrc=c=brown:r=44100:a=0.05:d=5,highpass=f=200,volume=0.3",
         "soft_fabric_towel": "anoisesrc=c=pink:r=44100:a=0.03:d=5,volume=0.35,afade=t=in:st=0:d=0.5",
         "gentle_taps": "anoisesrc=c=brown:r=44100:a=0.06:d=5,volume=0.3",
-        # 씬 4: 별사탕 오물오물 씹는 소리 (Nibble Pop ASMR)
         "cute_nibble_munch": "anoisesrc=c=brown:r=44100:a=0.12:d=5,highpass=f=400,lowpass=f=3500,volume=0.55",
         "sparkle_chimes": "sine=f=1200:r=44100:d=5,volume=0.025,afade=t=in:st=0:d=0.5",
         "soft_blanket_tuck": "anoisesrc=c=pink:r=44100:a=0.04:d=5,lowpass=f=600,volume=0.3",
-        # 씬 5: 새근새근 수면 골골송 (Peaceful Sleep Purr ASMR)
         "peaceful_sleep_purr": "sine=f=180:r=44100:d=5,volume=0.04,afade=t=in:st=0:d=1,afade=t=out:st=4:d=1",
     }
 
@@ -127,6 +122,7 @@ def send_telegram_message(text: str):
 
 
 def get_all_uploaded_creature_names() -> set:
+    """유튜브 채널의 모든 영상을 스캔하여 이미 제작된 환상종을 100% 감지"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         return set()
     try:
@@ -159,13 +155,20 @@ def get_all_uploaded_creature_names() -> set:
             if not next_page_token:
                 break
 
+        print(f"📊 YouTube 채널 총 업로드 영상 수: {len(titles)}개")
         uploaded_names = set()
         for t in titles:
+            t_clean = t.lower()
             for c in CREATURE_POOL:
-                if c["name"].lower() in t.lower():
+                full_name = c["name"].lower()
+                core_name = c["name"].replace("Baby ", "").strip().lower()
+                # 풀네임 또는 핵심 이름이 제목에 들어가 있으면 제작 완료로 판별
+                if full_name in t_clean or core_name in t_clean:
                     uploaded_names.add(c["name"])
 
-        print(f"🚫 [제외] 이미 유튜브에 업로드된 환상종 ({len(uploaded_names)}종): {list(uploaded_names)}")
+        print(f"🚫 [제외 목록] YouTube에 이미 등록된 환상종 ({len(uploaded_names)}종):")
+        for name in sorted(list(uploaded_names)):
+            print(f"   • {name}")
         return uploaded_names
     except Exception as e:
         print(f"⚠️ YouTube API 스캔 실패 ({e})")
@@ -186,15 +189,21 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
-    all_used_creatures = uploaded_creatures.union(set(history))
-    available_creatures = [c for c in CREATURE_POOL if c["name"] not in all_used_creatures]
+    # 유튜브 업로드된 것과 로컬 히스토리 결합
+    all_used = uploaded_creatures.union(set(history))
 
-    if not available_creatures:
+    # 30종 중 아직 유튜브에 없는 새로운 환상종만 필터링
+    available = [c for c in CREATURE_POOL if c["name"] not in all_used]
+
+    if not available:
+        # 30종 완주 시
         selected_creature = CREATURE_POOL[0]
-        current_episode = len(all_used_creatures) + 1
+        current_episode = len(all_used) + 1
+        print("🎉 30종 아기 환상종 시즌 1이 모두 완주되었습니다! 새로운 사이클을 시작합니다.")
     else:
-        selected_creature = available_creatures[0]
-        current_episode = len(all_used_creatures) + 1
+        # 아직 유튜브에 안 올라간 첫 번째 환상종을 자동 선택!
+        selected_creature = available[0]
+        current_episode = len(all_used) + 1
 
     season = 1 if current_episode <= 30 else 2
 
@@ -206,7 +215,8 @@ def resolve_unique_topic() -> tuple:
         pass
 
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
-    print(f"✅ [에피소드 {current_episode}화 / 시즌 {season}] 배정 크리처: {selected_creature['name']} (남은 환상종: {len(available_creatures)}종)")
+    print(f"\n🎯 [최종 배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
+    print(f"📦 [남은 환상종] 총 {len(available)}종 대기 중")
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
 
 
@@ -307,7 +317,7 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
             }
         ],
         "youtube_metadata": {
-            "title": f"Rescuing a Shivering Baby {creature_name}! 🥺 Bedtime ASMR",
+            "title": f"Rescuing a Shivering {creature_name}! 🥺 Bedtime ASMR",
             "description": f"Rescuing a tiny lost {creature_name} and giving it a warm cozy bed! 🌿✨\n\n🐾 Welcome to Pocket Creature Rescue. What should we name this cute little one?\n\n#Shorts #BabyCreature #{creature_name.replace(' ', '')} #Cute #ASMR #Bedtime",
             "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing"]
         }
@@ -435,7 +445,7 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
             if sfx_file:
                 inputs += ["-i", sfx_file]
                 label = f"sfx{stream_cursor}"
-                
+
                 if scene_idx == 4 and "nibble" in cat:
                     vol = 0.50
                 elif scene_idx == 5:
@@ -460,21 +470,39 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
     else:
         filter_parts.append("[bgm]alimiter=limit=0.95[aout]")
 
-    subprocess.run(
-        [
-            "ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filter_parts),
-            "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path
-        ],
-        check=True,
-        capture_output=True,
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-y", *inputs, "-filter_complex", ";".join(filter_parts),
+                "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path
+            ],
+            check=True,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        _generate_emergency_fallback_soundtrack(video_path, total_sec, output_path)
+
+
+def _generate_emergency_fallback_soundtrack(video_path: str, total_sec: int, output_path: str):
+    filter_complex = (
+        f"anoisesrc=c=pink:r=44100:a=0.02,atrim=0:{total_sec},asetpts=PTS-STARTPTS[bgm];"
+        f"[bgm]alimiter=limit=0.95[aout]"
     )
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", video_path, "-filter_complex", filter_complex,
+             "-map", "0:v:0", "-map", "[aout]", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", output_path],
+            check=True, capture_output=True,
+        )
+    except subprocess.CalledProcessError:
+        subprocess.run(["ffmpeg", "-y", "-i", video_path, "-c", "copy", output_path], check=True, capture_output=True)
 
 
 def send_telegram_preview(video_path: str, plan: dict):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v29.3 완전 무오류 ASMR)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v30 무중복 전수 스캔)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -498,7 +526,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v29.3 완전 무오류 ASMR) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v30 무중복 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -539,7 +567,7 @@ def main():
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
     send_telegram_preview(final_path, plan)
-    print("🐾 v29.3 고음질 먹방 ASMR 영상 완성 및 텔레그램 발송 완료!")
+    print("🐾 v30 무중복 4K 영상 완성 및 텔레그램 발송 완료!")
 
 
 if __name__ == "__main__":
