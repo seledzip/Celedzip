@@ -1,10 +1,10 @@
 name: 부업노트 매일 초안 생성 및 텔레그램 전송
 on:
   schedule:
-    - cron: "0 0 * * *"
-    - cron: "0 4 * * *"
-    - cron: "0 8 * * *"
-    - cron: "0 12 * * *"
+    - cron: '0 4,9,23 * * *'
+    - cron: '0 4,9,23 * * *'
+    - cron: '0 4,9,23 * * *'
+    - cron: '0 4,9,23 * * *'
   workflow_dispatch: {}
 permissions:
   contents: write

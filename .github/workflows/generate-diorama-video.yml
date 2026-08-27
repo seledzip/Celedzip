@@ -3,9 +3,9 @@ name: Baby Fantasy Sanctuary Auto Publisher
 on:
   schedule:
     # 한국시간 기준 매일 오전 08:30 실행 (UTC 23:30)
-    - cron: '30 23 * * *'
+    - cron: '0 9,22 * * *'
     # 한국시간 기준 매일 오후 18:30 실행 (UTC 09:30)
-    - cron: '30 9 * * *'
+    - cron: '0 9,22 * * *'
   workflow_dispatch:
     inputs:
       topic:
