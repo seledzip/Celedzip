@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: 저장소 체크아웃
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Python 설치
         uses: actions/setup-python@v5
@@ -43,5 +45,4 @@ jobs:
           git config user.name "환상종 자동화 봇"
           git config user.email "bot@seledzip.local"
           git add creature_history.json
-          git diff --cached --quiet || git commit -m "🤖 아기 환상종 제작 완료 히스토리 갱신"
-          git push
+          git diff --cached --quiet || (git commit -m "🤖 아기 환상종 제작 완료 히스토리 갱신" && git pull --rebase origin main && git push)
