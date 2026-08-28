@@ -1,8 +1,9 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v32 - Pure Natural Eyes & Crisp Real ASMR)
-- [눈 발광 완전 박멸] 눈 레이저 빔 차단 / 자연스러운 검은 눈망울 유지 & 몸통 골든 오라만 허용
-- [초고음질 ASMR 먹방] 오물오물 씹는 소리(Crisp Nibble & Crunch) 5단계 리듬 펄스 합성 및 BGM 덕킹
-- [무중복 순환 파이프라인] 히스토리 기반 100% 순차 자동 배정
+아기 환상종 보호소 무중단 자동화 엔진 (v33 - Real YouTube Upload & Live Link Sync)
+- [YouTube 실제 업로드 연동] videos.insert(unlisted) 탑재 & 실제 유튜브 URL 텔레그램 발송
+- [눈 발광 100% 차단] 자연스러운 검은 눈망울 유지 & 몸통 골든 오라 연출
+- [초고음질 먹방 ASMR] 씹는 소리(Crisp Nibble) 볼륨 부스팅 & BGM 덕킹
+- [무중복 순차 배정] 히스토리 기반 다음 환상종 자동 배정
 """
 
 import os
@@ -13,6 +14,9 @@ import base64
 import random
 import subprocess
 import requests
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "").strip()
@@ -88,7 +92,6 @@ def ensure_sfx_library():
             check=True, capture_output=True
         )
 
-    # 씬 4 먹방 ASMR: 5초 동안 4~5회 바삭/오물 씹는 소리 펄스 합성
     crisp_chew_filter = (
         "aevalsrc='if(between(mod(t,0.8),0.05,0.22)+between(mod(t,0.8),0.32,0.48),"
         "0.6*sin(2*PI*950*t)*exp(-25*mod(t,0.4))+0.4*sin(2*PI*1800*t)*exp(-35*mod(t,0.4)),0)':d=5,"
@@ -159,7 +162,7 @@ def resolve_unique_topic() -> tuple:
 
     season = 1 if current_episode <= 30 else 2
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
-    print(f"\n🎯 [최종 배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
+    print(f"\n🎯 [배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
 
 
@@ -390,7 +393,6 @@ def generate_soundtrack_and_mux(video_path: str, total_sec: int, output_path: st
                 inputs += ["-i", sfx_file]
                 label = f"sfx{stream_cursor}"
 
-                # 씬 4 먹방 ASMR 씹는 소리 2.2배 증폭
                 if scene_idx == 4 and "chewing" in cat:
                     vol = 2.20
                 elif scene_idx == 4 and "sparkle" in cat:
@@ -445,15 +447,71 @@ def _generate_emergency_fallback_soundtrack(video_path: str, total_sec: int, out
         subprocess.run(["ffmpeg", "-y", "-i", video_path, "-c", "copy", output_path], check=True, capture_output=True)
 
 
-def send_telegram_preview(video_path: str, plan: dict):
+def upload_video_to_youtube(video_path: str, plan: dict) -> str:
+    """YouTube Data API v3를 통한 실제 일부공개(Unlisted) 업로드"""
+    if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
+        print("⚠️ YouTube API 인증 정보(CLIENT_ID/SECRET/REFRESH_TOKEN)가 없어 업로드를 건너뜁니다.")
+        return None
+    try:
+        print("🚀 YouTube API를 통해 영상 업로드를 시작합니다...")
+        creds = Credentials(
+            None,
+            refresh_token=REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        )
+        youtube = build("youtube", "v3", credentials=creds)
+        yt = plan["youtube_metadata"]
+
+        body = {
+            "snippet": {
+                "title": yt["title"],
+                "description": yt["description"],
+                "tags": yt.get("tags", []),
+                "categoryId": "15"  # Pets & Animals
+            },
+            "status": {
+                "privacyStatus": "unlisted",  # 일부공개 설정
+                "selfDeclaredMadeForKids": False
+            }
+        }
+
+        media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
+        request = youtube.videos().insert(
+            part="snippet,status",
+            body=body,
+            media_body=media
+        )
+
+        response = None
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                print(f"   • 업로드 진행률: {int(status.progress() * 100)}%")
+
+        video_id = response.get("id")
+        video_url = f"https://youtu.be/{video_id}"
+        print(f"✅ YouTube 업로드 성공! 영상 링크: {video_url}")
+        return video_url
+    except Exception as e:
+        print(f"❌ YouTube 업로드 중 오류 발생: {e}")
+        return None
+
+
+def send_telegram_preview(video_path: str, plan: dict, yt_url: str = None):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
+
+    upload_status_msg = f"🔗 *YouTube 링크*: {yt_url}\n(일부공개로 등록되었습니다)" if yt_url else "⚠️ *유튜브 업로드 실패 (API 인증을 확인하세요)*"
+
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v32 자연스러운 눈망울 & 리얼 ASMR)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v33 실시간 유튜브 연동)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
-        f"🚀 *유튜브에 '일부공개'로 등록되었습니다.*"
+        f"🚀 {upload_status_msg}"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
@@ -473,7 +531,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v32 클린 아이 & ASMR 엔진) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v33 유튜브 자동 업로드 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -513,8 +571,12 @@ def main():
     total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
-    send_telegram_preview(final_path, plan)
-    print("🐾 v32 클린 아이 & ASMR 먹방 영상 완성 및 텔레그램 발송 완료!")
+    # 1. YouTube 실제 업로드 실행
+    yt_url = upload_video_to_youtube(final_path, plan)
+
+    # 2. 텔레그램 미리보기 및 YouTube 링크 전송
+    send_telegram_preview(final_path, plan, yt_url)
+    print(f"🐾 v33 제작 완료! (YouTube URL: {yt_url})")
 
 
 if __name__ == "__main__":
