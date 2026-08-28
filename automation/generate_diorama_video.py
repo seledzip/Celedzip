@@ -137,7 +137,7 @@ def resolve_unique_topic() -> tuple:
     history = []
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8-sig") as f:
                 history = json.load(f)
         except Exception:
             history = []
@@ -155,7 +155,7 @@ def resolve_unique_topic() -> tuple:
         current_episode = len(history)
 
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        with open(HISTORY_FILE, "w", encoding="utf-8-sig") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
@@ -337,7 +337,7 @@ def image_to_data_uri(image_path: str) -> str:
 
 def stitch_clips_clean(clip_paths: list, output_path: str):
     concat_list_path = f"{WORK_DIR}/concat_list.txt"
-    with open(concat_list_path, "w", encoding="utf-8") as f:
+    with open(concat_list_path, "w", encoding="utf-8-sig") as f:
         for path in clip_paths:
             clean_path = os.path.abspath(path).replace("\\", "/")
             f.write(f"file '{clean_path}'\n")
@@ -537,7 +537,7 @@ def main():
 
     plan = build_pure_visual_rescue_plan(CREATURE_NAME, CREATURE_DESC)
 
-    with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
+    with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8-sig") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
 
     aspect_ratio = plan.get("aspect_ratio", "9:16")
