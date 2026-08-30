@@ -1,9 +1,9 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v33 - Real YouTube Upload & Live Link Sync)
-- [YouTube 실제 업로드 연동] videos.insert(unlisted) 탑재 & 실제 유튜브 URL 텔레그램 발송
-- [눈 발광 100% 차단] 자연스러운 검은 눈망울 유지 & 몸통 골든 오라 연출
+아기 환상종 보호소 무중단 자동화 엔진 (v34 - Bulletproof FilterComplex Concat & YouTube Auto-Upload)
+- [FFmpeg 100% 방탄 병합] filter_complex 기반 1080x1920 30fps 규격 정규화로 Concat 183 에러 원천 해결
+- [YouTube 실제 업로드] videos.insert(unlisted) 연동 및 실시간 시청 링크 텔레그램 발송
+- [눈 발광 100% 차단] 자연스러운 눈망울 유지 & 몸통 골든 오라 연출
 - [초고음질 먹방 ASMR] 씹는 소리(Crisp Nibble) 볼륨 부스팅 & BGM 덕킹
-- [무중복 순차 배정] 히스토리 기반 다음 환상종 자동 배정
 """
 
 import os
@@ -155,7 +155,7 @@ def resolve_unique_topic() -> tuple:
         current_episode = len(history)
 
     try:
-        with open(HISTORY_FILE, "w", encoding="utf-8-sig") as f:
+        with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
@@ -336,18 +336,35 @@ def image_to_data_uri(image_path: str) -> str:
 
 
 def stitch_clips_clean(clip_paths: list, output_path: str):
-    concat_list_path = f"{WORK_DIR}/concat_list.txt"
-    with open(concat_list_path, "w", encoding="utf-8-sig") as f:
-        for path in clip_paths:
-            clean_path = os.path.abspath(path).replace("\\", "/")
-            f.write(f"file '{clean_path}'\n")
+    """방탄 FilterComplex 병합: 모든 클립의 해상도, FPS, SAR를 정규화하여 Concat 183 에러 원천 방지"""
+    inputs = []
+    filter_chains = []
+    concat_inputs = []
 
-    subprocess.run(
-        ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list_path,
-         "-c:v", "libx264", "-pix_fmt", "yuv420p", output_path],
-        check=True,
-        capture_output=True,
-    )
+    for i, p in enumerate(clip_paths):
+        inputs += ["-i", p]
+        # 모든 클립을 1080x1920 30fps yuv420p로 표준화
+        filter_chains.append(
+            f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
+            f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{i}]"
+        )
+        concat_inputs.append(f"[v{i}]")
+
+    concat_filter = f"{''.join(concat_inputs)}concat=n={len(clip_paths)}:v=1:a=0[vout]"
+    full_filter_complex = ";".join(filter_chains) + ";" + concat_filter
+
+    cmd = [
+        "ffmpeg", "-y", *inputs,
+        "-filter_complex", full_filter_complex,
+        "-map", "[vout]",
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-pix_fmt", "yuv420p",
+        output_path
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"❌ FFmpeg Sttich 에러: {result.stderr}")
+        raise RuntimeError(f"FFmpeg Concat 실패: {result.stderr[-300:]}")
 
 
 def _pick_random_file(folder_path: str) -> str:
@@ -448,12 +465,12 @@ def _generate_emergency_fallback_soundtrack(video_path: str, total_sec: int, out
 
 
 def upload_video_to_youtube(video_path: str, plan: dict) -> str:
-    """YouTube Data API v3를 통한 실제 일부공개(Unlisted) 업로드"""
+    """YouTube Data API v3를 통한 실제 일부공개(Unlisted) 자동 업로드"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
-        print("⚠️ YouTube API 인증 정보(CLIENT_ID/SECRET/REFRESH_TOKEN)가 없어 업로드를 건너뜁니다.")
+        print("⚠️ YouTube API 인증 정보가 없어 업로드를 건너뜁니다.")
         return None
     try:
-        print("🚀 YouTube API를 통해 영상 업로드를 시작합니다...")
+        print("🚀 YouTube API로 일부공개 업로드를 진행합니다...")
         creds = Credentials(
             None,
             refresh_token=REFRESH_TOKEN,
@@ -470,20 +487,16 @@ def upload_video_to_youtube(video_path: str, plan: dict) -> str:
                 "title": yt["title"],
                 "description": yt["description"],
                 "tags": yt.get("tags", []),
-                "categoryId": "15"  # Pets & Animals
+                "categoryId": "15"
             },
             "status": {
-                "privacyStatus": "unlisted",  # 일부공개 설정
+                "privacyStatus": "unlisted",
                 "selfDeclaredMadeForKids": False
             }
         }
 
         media = MediaFileUpload(video_path, mimetype="video/mp4", resumable=True)
-        request = youtube.videos().insert(
-            part="snippet,status",
-            body=body,
-            media_body=media
-        )
+        request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
 
         response = None
         while response is None:
@@ -493,25 +506,24 @@ def upload_video_to_youtube(video_path: str, plan: dict) -> str:
 
         video_id = response.get("id")
         video_url = f"https://youtu.be/{video_id}"
-        print(f"✅ YouTube 업로드 성공! 영상 링크: {video_url}")
+        print(f"✅ YouTube 업로드 성공: {video_url}")
         return video_url
     except Exception as e:
-        print(f"❌ YouTube 업로드 중 오류 발생: {e}")
+        print(f"❌ YouTube 업로드 실패: {e}")
         return None
 
 
 def send_telegram_preview(video_path: str, plan: dict, yt_url: str = None):
     yt = plan["youtube_metadata"]
     tags_str = " ".join([f"#{t.replace('#', '')}" for t in yt.get("tags", [])])
-
-    upload_status_msg = f"🔗 *YouTube 링크*: {yt_url}\n(일부공개로 등록되었습니다)" if yt_url else "⚠️ *유튜브 업로드 실패 (API 인증을 확인하세요)*"
+    upload_status = f"🔗 *YouTube 링크*: {yt_url}\n(일부공개로 등록되었습니다)" if yt_url else "⚠️ *유튜브 업로드 실패*"
 
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v33 실시간 유튜브 연동)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v34 방탄 렌더링)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
-        f"🚀 {upload_status_msg}"
+        f"🚀 {upload_status}"
     )
     if len(caption) > 1000:
         caption = caption[:1000] + "..."
@@ -531,13 +543,13 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v33 유튜브 자동 업로드 엔진) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v34 방탄 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
     plan = build_pure_visual_rescue_plan(CREATURE_NAME, CREATURE_DESC)
 
-    with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8-sig") as f:
+    with open(f"{WORK_DIR}/metadata.json", "w", encoding="utf-8") as f:
         json.dump(plan, f, ensure_ascii=False, indent=2)
 
     aspect_ratio = plan.get("aspect_ratio", "9:16")
@@ -571,12 +583,9 @@ def main():
     total_duration = int(len(plan["scenes"]) * SCENE_DURATION)
     generate_soundtrack_and_mux(stitched_clean_path, total_duration, final_path)
 
-    # 1. YouTube 실제 업로드 실행
     yt_url = upload_video_to_youtube(final_path, plan)
-
-    # 2. 텔레그램 미리보기 및 YouTube 링크 전송
     send_telegram_preview(final_path, plan, yt_url)
-    print(f"🐾 v33 제작 완료! (YouTube URL: {yt_url})")
+    print(f"🐾 v34 제작 및 업로드 완료! (URL: {yt_url})")
 
 
 if __name__ == "__main__":
