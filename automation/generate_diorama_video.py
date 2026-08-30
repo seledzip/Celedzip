@@ -1,9 +1,9 @@
 ﻿"""
-아기 환상종 보호소 무중단 자동화 엔진 (v34 - Bulletproof FilterComplex Concat & YouTube Auto-Upload)
-- [FFmpeg 100% 방탄 병합] filter_complex 기반 1080x1920 30fps 규격 정규화로 Concat 183 에러 원천 해결
+아기 환상종 보호소 무중단 자동화 엔진 (v35 - Extended Replicate Polling & Scene Auto-Retry)
+- [Replicate 타임아웃 10분 연장] 360초 -> 600초 확장으로 대기 시간 초과 에러 해결
+- [씬 단위 자동 재시도] API 지연/네트워크 순단 시 씬별 1회 자동 복구 재시도
+- [FFmpeg 100% 방탄 병합] filter_complex 기반 1080x1920 30fps 규격 정규화
 - [YouTube 실제 업로드] videos.insert(unlisted) 연동 및 실시간 시청 링크 텔레그램 발송
-- [눈 발광 100% 차단] 자연스러운 눈망울 유지 & 몸통 골든 오라 연출
-- [초고음질 먹방 ASMR] 씹는 소리(Crisp Nibble) 볼륨 부스팅 & BGM 덕킹
 """
 
 import os
@@ -185,12 +185,14 @@ def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
     raise RuntimeError(f"최대 재시도 초과: {url}")
 
 
-def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
+def poll_until_done(data: dict, max_wait_sec: int = 600) -> dict:
     get_url = data.get("urls", {}).get("get")
     waited = 0
     while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
         time.sleep(5)
         waited += 5
+        if waited % 20 == 0:
+            print(f"   ⏳ 렌더링 진행 중... ({waited}초 경과, 현재 상태: {data.get('status')})")
         try:
             poll_res = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=30)
             poll_res.raise_for_status()
@@ -199,7 +201,8 @@ def poll_until_done(data: dict, max_wait_sec: int = 360) -> dict:
             continue
 
     if data.get("status") != "succeeded":
-        raise RuntimeError(f"Replicate 오류: {data.get('error')}")
+        error_detail = data.get("error") or f"상태({data.get('status')}), {max_wait_sec}초 타임아웃 경과"
+        raise RuntimeError(f"Replicate 오류: {error_detail}")
     return data
 
 
@@ -287,36 +290,44 @@ def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
             }
         }
     )
-    data = poll_until_done(data, max_wait_sec=120)
+    data = poll_until_done(data, max_wait_sec=180)
     output = data.get("output")
     return output[0] if isinstance(output, list) else output
 
 
 def generate_video_clip(image_source: str, motion_prompt: str, negative_prompt: str,
-                         aspect_ratio: str, index: int) -> str:
-    time.sleep(15)
-    data = post_with_retry(
-        "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
-        {
-            "input": {
-                "prompt": motion_prompt,
-                "negative_prompt": f"{negative_prompt}, text, letters, subtitles, watermark, blur, brown mud, paintbrush, changing animal species, laser eyes, glowing eyes, flashlight eyes",
-                "image": image_source,
-                "duration": 5,
-                "aspect_ratio": aspect_ratio,
-            }
-        }
-    )
-    data = poll_until_done(data, max_wait_sec=360)
-    video_url = data.get("output")[0] if isinstance(data.get("output"), list) else data.get("output")
+                         aspect_ratio: str, index: int, retry_count: int = 1) -> str:
+    for attempt in range(retry_count + 1):
+        try:
+            time.sleep(10)
+            data = post_with_retry(
+                "https://api.replicate.com/v1/models/kwaivgi/kling-v2.5-turbo-pro/predictions",
+                {
+                    "input": {
+                        "prompt": motion_prompt,
+                        "negative_prompt": f"{negative_prompt}, text, letters, subtitles, watermark, blur, brown mud, paintbrush, changing animal species, laser eyes, glowing eyes, flashlight eyes",
+                        "image": image_source,
+                        "duration": 5,
+                        "aspect_ratio": aspect_ratio,
+                    }
+                }
+            )
+            data = poll_until_done(data, max_wait_sec=600)
+            video_url = data.get("output")[0] if isinstance(data.get("output"), list) else data.get("output")
 
-    video_res = requests.get(video_url, timeout=60)
-    video_res.raise_for_status()
-    os.makedirs(WORK_DIR, exist_ok=True)
-    clip_path = f"{WORK_DIR}/scene_{index}.mp4"
-    with open(clip_path, "wb") as f:
-        f.write(video_res.content)
-    return clip_path
+            video_res = requests.get(video_url, timeout=60)
+            video_res.raise_for_status()
+            os.makedirs(WORK_DIR, exist_ok=True)
+            clip_path = f"{WORK_DIR}/scene_{index}.mp4"
+            with open(clip_path, "wb") as f:
+                f.write(video_res.content)
+            return clip_path
+        except Exception as e:
+            if attempt < retry_count:
+                print(f"⚠️ [씬 {index}] 렌더링 지연/에러 발생 ({e}). 10초 후 재시도합니다...")
+                time.sleep(10)
+                continue
+            raise
 
 
 def extract_last_frame(clip_path: str, index: int) -> str:
@@ -336,14 +347,12 @@ def image_to_data_uri(image_path: str) -> str:
 
 
 def stitch_clips_clean(clip_paths: list, output_path: str):
-    """방탄 FilterComplex 병합: 모든 클립의 해상도, FPS, SAR를 정규화하여 Concat 183 에러 원천 방지"""
     inputs = []
     filter_chains = []
     concat_inputs = []
 
     for i, p in enumerate(clip_paths):
         inputs += ["-i", p]
-        # 모든 클립을 1080x1920 30fps yuv420p로 표준화
         filter_chains.append(
             f"[{i}:v]scale=1080:1920:force_original_aspect_ratio=decrease,"
             f"pad=1080:1920:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30,format=yuv420p[v{i}]"
@@ -363,7 +372,6 @@ def stitch_clips_clean(clip_paths: list, output_path: str):
     
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        print(f"❌ FFmpeg Sttich 에러: {result.stderr}")
         raise RuntimeError(f"FFmpeg Concat 실패: {result.stderr[-300:]}")
 
 
@@ -465,7 +473,6 @@ def _generate_emergency_fallback_soundtrack(video_path: str, total_sec: int, out
 
 
 def upload_video_to_youtube(video_path: str, plan: dict) -> str:
-    """YouTube Data API v3를 통한 실제 일부공개(Unlisted) 자동 업로드"""
     if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
         print("⚠️ YouTube API 인증 정보가 없어 업로드를 건너뜁니다.")
         return None
@@ -519,7 +526,7 @@ def send_telegram_preview(video_path: str, plan: dict, yt_url: str = None):
     upload_status = f"🔗 *YouTube 링크*: {yt_url}\n(일부공개로 등록되었습니다)" if yt_url else "⚠️ *유튜브 업로드 실패*"
 
     caption = (
-        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v34 방탄 렌더링)!*\n\n"
+        f"🐾 *[{plan['project_title']}] 구조 영상 완성 (v35 롱 타임아웃 & 방탄 렌더링)!*\n\n"
         f"📌 *Title*: {yt['title']}\n"
         f"📝 *Description*: {yt['description']}\n"
         f"🏷️ *Tags*: {tags_str}\n\n"
@@ -543,7 +550,7 @@ def main():
     print(f"Target Topic: {TOPIC}")
     os.makedirs(WORK_DIR, exist_ok=True)
     send_telegram_message(
-        f"🐾 아기 환상종 숏폼(v34 방탄 엔진) 제작 시작!\n"
+        f"🐾 아기 환상종 숏폼(v35 방탄 롱타임아웃 엔진) 제작 시작!\n"
         f"크리처: '{CREATURE_NAME}' (에피소드 {CURRENT_EPISODE}화)"
     )
 
@@ -585,7 +592,7 @@ def main():
 
     yt_url = upload_video_to_youtube(final_path, plan)
     send_telegram_preview(final_path, plan, yt_url)
-    print(f"🐾 v34 제작 및 업로드 완료! (URL: {yt_url})")
+    print(f"🐾 v35 제작 및 업로드 완료! (URL: {yt_url})")
 
 
 if __name__ == "__main__":
