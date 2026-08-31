@@ -1,0 +1,4 @@
+file 'C:/Users/user/OneDrive/바탕 화면/Celedzip/ad_work/ui_typed_scene_1.mp4'
+file 'C:/Users/user/OneDrive/바탕 화면/Celedzip/ad_work/ui_typed_scene_2.mp4'
+file 'C:/Users/user/OneDrive/바탕 화면/Celedzip/ad_work/ui_typed_scene_3.mp4'
+file 'C:/Users/user/OneDrive/바탕 화면/Celedzip/ad_work/ui_typed_scene_4.mp4'
