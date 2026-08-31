@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://seledzip.github.io/Celedzip/sitemap.xml
+Sitemap: https://seledzip.github.io/sitemap.xml
