@@ -1,4 +1,4 @@
-name: 문의하기 링크 일괄 추가
+﻿name: 臾몄쓽?섍린 留곹겕 ?쇨큵 異붽?
 on:
   workflow_dispatch: {}
 permissions:
@@ -7,13 +7,13 @@ jobs:
   add-link:
     runs-on: ubuntu-latest
     steps:
-      - name: 저장소 체크아웃
+      - name: ??μ냼 泥댄겕?꾩썐
         uses: actions/checkout@v4
-      - name: Python 설치
+      - name: Python ?ㅼ튂
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: 문의하기 링크 일괄 삽입
+      - name: 臾몄쓽?섍린 留곹겕 ?쇨큵 ?쎌엯
         run: |
           python3 << 'EOF'
           import os
@@ -24,42 +24,44 @@ jobs:
                   content = f.read()
 
               if 'href="' + prefix + 'contact.html"' in content:
-                  print(f"이미 있음 - 건너뜀: {path}")
+                  print(f"?대? ?덉쓬 - 嫄대꼫?: {path}")
                   return
 
               pattern = re.compile(
-                  r'(<a href="' + re.escape(prefix) + r'disclosure\.html">제휴 고지</a>)'
+                  r'(<a href="' + re.escape(prefix) + r'disclosure\.html">?쒗쑕 怨좎?</a>)'
               )
               new_content, count = pattern.subn(
-                  r'\1\n      <a href="' + prefix + 'contact.html">문의하기</a>',
+                  r'\1\n      <a href="' + prefix + 'contact.html">臾몄쓽?섍린</a>',
                   content,
                   count=1,
               )
 
               if count == 0:
-                  print(f"패턴 못 찾음 - 건너뜀: {path}")
+                  print(f"?⑦꽩 紐?李얠쓬 - 嫄대꼫?: {path}")
                   return
 
               with open(path, "w", encoding="utf-8") as f:
                   f.write(new_content)
-              print(f"추가 완료: {path}")
+              print(f"異붽? ?꾨즺: {path}")
 
-          # 루트 레벨 html 파일들
+          # 猷⑦듃 ?덈꺼 html ?뚯씪??
           root_files = ["index.html", "about.html", "disclosure.html", "privacy.html"]
           for fname in root_files:
               if os.path.exists(fname):
                   process_file(fname, "")
 
-          # posts/ 폴더 안 모든 글
+          # posts/ ?대뜑 ??紐⑤뱺 湲
           if os.path.isdir("posts"):
               for fname in os.listdir("posts"):
                   if fname.endswith(".html"):
                       process_file(os.path.join("posts", fname), "../")
           EOF
-      - name: 변경사항 커밋 및 푸시
+      - name: 蹂寃쎌궗??而ㅻ컠 諛??몄떆
         run: |
-          git config user.name "부업노트 자동화 봇"
+          git config user.name "遺?낅끂???먮룞??遊?
           git config user.email "bot@seledzip.local"
           git add -A
-          git diff --cached --quiet || git commit -m "전체 페이지에 문의하기 링크 추가"
-          git push
+          git diff --cached --quiet || git commit -m "?꾩껜 ?섏씠吏??臾몄쓽?섍린 留곹겕 異붽?"
+          git pull --rebase --autostash origin main || true
+    git push
+

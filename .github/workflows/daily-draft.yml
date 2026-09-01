@@ -40,4 +40,6 @@ jobs:
           git add drafts/
           if [ -d images ]; then git add images/; fi
           git diff --cached --quiet || git commit -m "📝 초안 + 이미지 자동 생성"
-          git push
+          git pull --rebase --autostash origin main || true
+    git push
+

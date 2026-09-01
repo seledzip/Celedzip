@@ -47,3 +47,4 @@ jobs:
           git add creature_history.json
           git diff --cached --quiet || (git commit -m "🤖 아기 환상종 제작 완료 히스토리 갱신" && git pull --rebase --autostash origin main || true
 
+
