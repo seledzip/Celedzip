@@ -603,3 +603,52 @@ if __name__ == "__main__":
         print(error_msg)
         send_telegram_message(error_msg)
         raise
+
+
+
+def upload_to_youtube(video_path: str, plan: dict):
+    if not (CLIENT_ID and CLIENT_SECRET and REFRESH_TOKEN):
+        print("?? YouTube API ?? ??? ?? ???? ?????.")
+        return
+    try:
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+
+        creds = Credentials(
+            None,
+            refresh_token=REFRESH_TOKEN,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET,
+            scopes=["https://www.googleapis.com/auth/youtube.upload"]
+        )
+        youtube = build("youtube", "v3", credentials=creds)
+        
+        yt = plan["youtube_metadata"]
+        body = {
+            "snippet": {
+                "title": yt["title"],
+                "description": yt["description"],
+                "tags": yt.get("tags", []),
+                "categoryId": "22"
+            },
+            "status": {
+                "privacyStatus": "unlisted",
+                "selfDeclaredMadeForKids": False
+            }
+        }
+        
+        media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+        request = youtube.videos().insert(part="snippet,status", body=body, media_body=media)
+        
+        response = None
+        while response is None:
+            status, response = request.next_chunk()
+            if status:
+                print(f"Uploaded {int(status.progress() * 100)}%.")
+        
+        print(f"? YouTube ??? ??! ?? ID: {response.get('id')}")
+    except Exception as e:
+        print(f"? YouTube ??? ? ?? ??: {e}")
+        raise e
