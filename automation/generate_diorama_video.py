@@ -213,67 +213,67 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
         "scenes": [
             {
                 "scene_number": 1,
-                "title": "Sad Shivering Creature in Cold Snow",
+                "title": "Emergency Critical Shivering in Blizzard (High Hook)",
                 "visual_prompt_en": (
-                    f"Extreme macro close-up of a tiny shivering {creature_desc}, "
-                    f"normal realistic dark glossy animal eyes, big watery sad reflective teary eyes, helpless trembling expression, "
-                    f"trapped in cold winter snow on thorny branches, cinematic lighting, 8k octane render, no text"
+                    f"Extreme macro close-up of an ultra-cute tiny baby {creature_desc}, "
+                    f"big tear-filled sparkling eyes trembling uncontrollably, freezing cold winter snowstorm background, "
+                    f"dramatic cinematic soft lighting, 8k resolution, highly detailed, emotional rescue hook, no text"
                 ),
                 "motion_prompt": (
-                    "Slow cinematic macro zoom on the shivering creature trembling in the cold wind, "
-                    "looking up with normal dark cute blinking eyes asking for help"
+                    "Dramatic macro slow zoom into the tiny creature shivering violently in the freezing snow, "
+                    "letting out a heart-wrenching tiny cry with big watery eyes begging for immediate rescue"
                 ),
-                "negative_prompt_en": "glowing eyes, laser eyes, bright eyes, yellow light from eyes, flashlight eyes, blurry, human face, mud, brown paint, dirt, text, adult animal"
+                "negative_prompt_en": "blurry, human face, mud, brown paint, dirt, text, watermark, adult animal"
             },
             {
                 "scene_number": 2,
-                "title": "Gentle Hands Rescuing the Creature",
+                "title": "Tender Rescue Care",
                 "motion_prompt": (
-                    "Gentle caring warm human hands softly reach into the frame from below, "
+                    "Warm, gentle caring human hands softly reach into the frame from below, "
                     "carefully and tenderly scooping up this exact tiny creature from the snow, "
-                    "lifting it safely and lovingly into warm embrace, creature has normal dark cute eyes"
+                    "lifting it safely and lovingly into a warm protective embrace"
                 ),
-                "negative_prompt_en": "glowing eyes, laser eyes, light from eyes, dropping, harsh movement, mud, brown goo, dirt, transformation, text"
+                "negative_prompt_en": "dropping, harsh movement, mud, brown goo, dirt, transformation, morphing into other animal, text"
             },
             {
                 "scene_number": 3,
-                "title": "Warm Towel Care in Cozy Home",
+                "title": "Warm Towel Healing",
                 "motion_prompt": (
-                    "Inside a warm cozy nursery, gentle human hands wrapping this exact tiny creature "
-                    "in a soft fluffy warm white towel, softly patting and drying its fur, "
-                    "the creature feels safe, relieved and softly smiles with normal dark glossy eyes"
+                    "Inside a glowing cozy nursery, gentle human hands wrapping this exact tiny creature "
+                    "in a soft fluffy warm white towel, tenderly drying its fur as it feels safe and relieved"
                 ),
-                "negative_prompt_en": "glowing eyes, laser eyes, flashlight eyes, mud, paintbrush, brown dirt, dirty towel, outdoor, snow, text"
+                "negative_prompt_en": "mud, paintbrush, brown dirt, dirty towel, outdoor, snow, animal shape change, text"
             },
             {
                 "scene_number": 4,
-                "title": "Feeding Starlight Treat & Swirling Body Aura",
+                "title": "Magic Star Treat Joy",
                 "motion_prompt": (
-                    "A yellow star-shaped candy treat is gently fed to this tiny creature. "
-                    "The creature happily nibbles and chews the treat with cute mouth chewing movements. "
-                    "As it eats, a soft shimmering golden light aura gently swirls only around its chest, body and paws. "
-                    "The creature has completely normal dark realistic animal eyes, zero eye glow, no light beam from eyes, smiling happily with warmth."
+                    "A glowing sparkling golden starlight candy treat is gently fed to this exact creature, "
+                    "as it happily nibbles and munches, magical golden fairy dust illuminates its body, "
+                    "its eyes light up with vibrant joyous energy and a beaming happy smile"
                 ),
-                "negative_prompt_en": "glowing eyes, yellow eyes, laser eyes, headlights eyes, flashlight eyes, light emitting from eyes, white eyes, glowing pupils, glowing irises, eye beam, lens flare in eyes, demon eyes, robot eyes, sad expression, changing creature, text, watermark"
+                "negative_prompt_en": "sad expression, brown liquid, mud, dirty bottle, changing creature, text, watermark"
             },
             {
                 "scene_number": 5,
-                "title": "Cozy Bedtime Sleep Ending",
+                "title": "Peaceful Sleep & Subscribe Call",
                 "motion_prompt": (
-                    "Gentle hands carefully tuck the clean sleepy creature into a miniature warm wooden cradle bed "
-                    "under a tiny soft knitted blanket, the creature gently closes its normal eyes and falls into peaceful sweet sleep"
+                    "Gentle hands tuck the happy, sleeping creature into a miniature warm wooden cradle bed "
+                    "under a soft knitted blanket, glowing ambient light, peaceful heartwarming ending shot"
                 ),
-                "negative_prompt_en": "glowing eyes, open glowing eyes, awake, falling, mud, snow, branches, text"
+                "negative_prompt_en": "awake, open eyes, falling, mud, snow, outdoor, branches, animal morphing, text"
             }
         ],
         "youtube_metadata": {
-            "title": f"Rescuing a Shivering {creature_name}! 🥺 Bedtime ASMR",
-            "description": f"Rescuing a tiny lost {creature_name} and giving it a warm cozy bed! 🌿✨\n\n🐾 Welcome to Pocket Creature Rescue. What should we name this cute little one?\n\n#Shorts #BabyCreature #{creature_name.replace(' ', '')} #Cute #ASMR #Bedtime",
-            "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing"]
+            "title": f"Rescuing a Shivering Baby {creature_name}! ?? Emotional ASMR",
+            "description": f"Rescuing a tiny lost {creature_name} from the freezing cold and giving it a warm cozy bed! ???
+
+?? Welcome to Pocket Creature Rescue. Subscribe to help us save more tiny fantasy babies every day! What should we name this cute little one?
+
+#Shorts #BabyCreature #{creature_name.replace(' ', '')} #Cute #ASMR #Healing #Subscribe",
+            "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing", "subscribe"]
         }
     }
-
-
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
     quality_enhancer = "masterpiece, ultra-sharp focus, hyper-detailed 3D octane render, volumetric warm lighting, clean background, no text, no watermark"
     full_prompt = f"{prompt}, {quality_enhancer}"
