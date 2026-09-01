@@ -207,81 +207,47 @@ def poll_until_done(data: dict, max_wait_sec: int = 600) -> dict:
 
 
 def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dict:
-    c_name_tag = creature_name.replace(" ", "")
-    desc_text = (
-        "Rescuing a tiny lost " + creature_name + " from the freezing cold and giving it a warm cozy bed!
-
-"
-        "?? Welcome to Pocket Creature Rescue. Subscribe to help us save more tiny fantasy babies every day! "
-        "What should we name this cute little one?
-
-"
-        "#Shorts #BabyCreature #" + c_name_tag + " #Cute #ASMR #Healing #Subscribe"
-    )
-    title_text = "Rescuing a Shivering Baby " + creature_name + "! ?? Emotional ASMR"
-    proj_title = "Rescuing a Lost " + creature_name
-
+    t_name = creature_name.replace(" ", "")
     return {
-        "project_title": proj_title,
+        "project_title": "Rescuing " + creature_name,
         "aspect_ratio": "9:16",
         "scenes": [
             {
                 "scene_number": 1,
-                "title": "Emergency Critical Shivering in Blizzard (High Hook)",
-                "visual_prompt_en": (
-                    "Extreme macro close-up of an ultra-cute tiny baby " + creature_desc + ", "
-                    "big tear-filled sparkling eyes trembling uncontrollably, freezing cold winter snowstorm background, "
-                    "dramatic cinematic soft lighting, 8k resolution, highly detailed, emotional rescue hook, no text"
-                ),
-                "motion_prompt": (
-                    "Dramatic macro slow zoom into the tiny creature shivering violently in the freezing snow, "
-                    "letting out a heart-wrenching tiny cry with big watery eyes begging for immediate rescue"
-                ),
-                "negative_prompt_en": "blurry, human face, mud, brown paint, dirt, text, watermark, adult animal"
+                "title": "Shivering in Blizzard",
+                "visual_prompt_en": "Extreme macro close-up of tiny baby " + creature_desc + ", big tearful eyes trembling in snowstorm, cinematic, 8k",
+                "motion_prompt": "Slow zoom into tiny creature shivering violently in snow, crying with big watery eyes",
+                "negative_prompt_en": "blurry, text, watermark"
             },
             {
                 "scene_number": 2,
-                "title": "Tender Rescue Care",
-                "motion_prompt": (
-                    "Warm, gentle caring human hands softly reach into the frame from below, "
-                    "carefully and tenderly scooping up this exact tiny creature from the snow, "
-                    "lifting it safely and lovingly into a warm protective embrace"
-                ),
-                "negative_prompt_en": "dropping, harsh movement, mud, brown goo, dirt, transformation, morphing into other animal, text"
+                "title": "Rescue Care",
+                "motion_prompt": "Gentle hands scooping up the tiny creature from snow into a warm embrace",
+                "negative_prompt_en": "text, watermark"
             },
             {
                 "scene_number": 3,
-                "title": "Warm Towel Healing",
-                "motion_prompt": (
-                    "Inside a glowing cozy nursery, gentle human hands wrapping this exact tiny creature "
-                    "in a soft fluffy warm white towel, tenderly drying its fur as it feels safe and relieved"
-                ),
-                "negative_prompt_en": "mud, paintbrush, brown dirt, dirty towel, outdoor, snow, animal shape change, text"
+                "title": "Warm Towel",
+                "motion_prompt": "Hands wrapping the tiny creature in a soft fluffy warm towel in a cozy room",
+                "negative_prompt_en": "text, watermark"
             },
             {
                 "scene_number": 4,
-                "title": "Magic Star Treat Joy",
-                "motion_prompt": (
-                    "A glowing sparkling golden starlight candy treat is gently fed to this exact creature, "
-                    "as it happily nibbles and munches, magical golden fairy dust illuminates its body, "
-                    "its eyes light up with vibrant joyous energy and a beaming happy smile"
-                ),
-                "negative_prompt_en": "sad expression, brown liquid, mud, dirty bottle, changing creature, text, watermark"
+                "title": "Magic Treat",
+                "motion_prompt": "Feeding a glowing star candy to the tiny creature as it happily smiles",
+                "negative_prompt_en": "text, watermark"
             },
             {
                 "scene_number": 5,
-                "title": "Peaceful Sleep & Subscribe Call",
-                "motion_prompt": (
-                    "Gentle hands tuck the happy, sleeping creature into a miniature warm wooden cradle bed "
-                    "under a soft knitted blanket, glowing ambient light, peaceful heartwarming ending shot"
-                ),
-                "negative_prompt_en": "awake, open eyes, falling, mud, snow, outdoor, branches, animal morphing, text"
+                "title": "Sleep",
+                "motion_prompt": "Tucking the happy creature into a warm wooden cradle bed to sleep",
+                "negative_prompt_en": "text, watermark"
             }
         ],
         "youtube_metadata": {
-            "title": title_text,
-            "description": desc_text,
-            "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing", "subscribe"]
+            "title": "Rescuing a Shivering Baby " + creature_name + "! #Shorts",
+            "description": "Rescue and healing ASMR for baby " + creature_name + "! Subscribe for more. #Shorts #" + t_name,
+            "tags": ["babycreature", "shorts", t_name.lower()]
         }
     }
 def generate_image(prompt: str, negative_prompt: str, aspect_ratio: str) -> str:
