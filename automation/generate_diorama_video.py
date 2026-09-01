@@ -207,25 +207,29 @@ def poll_until_done(data: dict, max_wait_sec: int = 600) -> dict:
 
 
 def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dict:
+    c_name_tag = creature_name.replace(" ", "")
     desc_text = (
-        f"Rescuing a tiny lost {creature_name} from the freezing cold and giving it a warm cozy bed!
+        "Rescuing a tiny lost " + creature_name + " from the freezing cold and giving it a warm cozy bed!
 
 "
         "?? Welcome to Pocket Creature Rescue. Subscribe to help us save more tiny fantasy babies every day! "
         "What should we name this cute little one?
 
 "
-        f"#Shorts #BabyCreature #{creature_name.replace(' ', '')} #Cute #ASMR #Healing #Subscribe"
+        "#Shorts #BabyCreature #" + c_name_tag + " #Cute #ASMR #Healing #Subscribe"
     )
+    title_text = "Rescuing a Shivering Baby " + creature_name + "! ?? Emotional ASMR"
+    proj_title = "Rescuing a Lost " + creature_name
+
     return {
-        "project_title": f"Rescuing a Lost {creature_name}",
+        "project_title": proj_title,
         "aspect_ratio": "9:16",
         "scenes": [
             {
                 "scene_number": 1,
                 "title": "Emergency Critical Shivering in Blizzard (High Hook)",
                 "visual_prompt_en": (
-                    f"Extreme macro close-up of an ultra-cute tiny baby {creature_desc}, "
+                    "Extreme macro close-up of an ultra-cute tiny baby " + creature_desc + ", "
                     "big tear-filled sparkling eyes trembling uncontrollably, freezing cold winter snowstorm background, "
                     "dramatic cinematic soft lighting, 8k resolution, highly detailed, emotional rescue hook, no text"
                 ),
@@ -275,7 +279,7 @@ def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dic
             }
         ],
         "youtube_metadata": {
-            "title": f"Rescuing a Shivering Baby {creature_name}! ?? Emotional ASMR",
+            "title": title_text,
             "description": desc_text,
             "tags": ["babycreature", "fantasyrescue", creature_name.lower().replace(" ", ""), "cutemonster", "asmr", "satisfying", "shorts", "healing", "subscribe"]
         }
