@@ -134,10 +134,8 @@ def resolve_unique_topic() -> tuple:
     if RAW_TOPIC and RAW_TOPIC.lower() not in ("auto", "none", ""):
         return RAW_TOPIC, "Baby Fantasy Creature", "tiny fantasy creature", 1
 
-    # 1. ??? ??? ?? ??? ?? ???? ???? ?? ?? (???? ?? ??)
     uploaded_names = get_all_uploaded_creature_names()
     
-    # 2. ?? ???? ??? ?? ??
     history = []
     if os.path.exists(HISTORY_FILE):
         try:
@@ -146,13 +144,10 @@ def resolve_unique_topic() -> tuple:
         except Exception:
             history = []
 
-    # ???? ???? ?? ?? ????? ?? ? ?? ?? ??? ??
     all_excluded = set(history).union(uploaded_names)
-    
     available_creatures = [c for c in CREATURE_POOL if c["name"] not in all_excluded]
 
     if not available_creatures:
-        # ?? ??? ? ????? ?? ????? ???? ??
         available_creatures = CREATURE_POOL
         history = []
 
@@ -170,41 +165,10 @@ def resolve_unique_topic() -> tuple:
 
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
-def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
-    for attempt in range(max_retries):
-        try:
-            res = requests.post(url, headers=REPLICATE_HEADERS, json=json_data, timeout=30)
-            if res.status_code == 429:
-                time.sleep((attempt + 1) * 20)
-                continue
-            res.raise_for_status()
-            return res.json()
-        except requests.exceptions.RequestException:
-            if attempt == max_retries - 1:
-                raise
-            time.sleep(5)
-    raise RuntimeError(f"최대 재시도 초과: {url}")
 
 
-def poll_until_done(data: dict, max_wait_sec: int = 600) -> dict:
-    get_url = data.get("urls", {}).get("get")
-    waited = 0
-    while data.get("status") not in ("succeeded", "failed", "canceled") and waited < max_wait_sec:
-        time.sleep(5)
-        waited += 5
-        if waited % 20 == 0:
-            print(f"   ⏳ 렌더링 진행 중... ({waited}초 경과, 현재 상태: {data.get('status')})")
-        try:
-            poll_res = requests.get(get_url, headers=REPLICATE_HEADERS, timeout=30)
-            poll_res.raise_for_status()
-            data = poll_res.json()
-        except requests.exceptions.RequestException:
-            continue
+TOPIC, CREATURE_NAME, CREATURE_DESC, CURRENT_EPISODE = resolve_unique_topic()
 
-    if data.get("status") != "succeeded":
-        error_detail = data.get("error") or f"상태({data.get('status')}), {max_wait_sec}초 타임아웃 경과"
-        raise RuntimeError(f"Replicate 오류: {error_detail}")
-    return data
 
 
 def build_pure_visual_rescue_plan(creature_name: str, creature_desc: str) -> dict:
