@@ -134,41 +134,42 @@ def resolve_unique_topic() -> tuple:
     if RAW_TOPIC and RAW_TOPIC.lower() not in ("auto", "none", ""):
         return RAW_TOPIC, "Baby Fantasy Creature", "tiny fantasy creature", 1
 
+    # 1. ??? ??? ?? ??? ?? ???? ???? ?? ?? (???? ?? ??)
+    uploaded_names = get_all_uploaded_creature_names()
+    
+    # 2. ?? ???? ??? ?? ??
     history = []
     if os.path.exists(HISTORY_FILE):
         try:
-            with open(HISTORY_FILE, "r", encoding="utf-8-sig") as f:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
                 history = json.load(f)
         except Exception:
             history = []
 
-    used_set = set(history)
-    available = [c for c in CREATURE_POOL if c["name"] not in used_set]
+    # ???? ???? ?? ?? ????? ?? ? ?? ?? ??? ??
+    all_excluded = set(history).union(uploaded_names)
+    
+    available_creatures = [c for c in CREATURE_POOL if c["name"] not in all_excluded]
 
-    if not available:
-        selected_creature = CREATURE_POOL[0]
-        history = [selected_creature["name"]]
-        current_episode = 1
-    else:
-        selected_creature = available[0]
+    if not available_creatures:
+        # ?? ??? ? ????? ?? ????? ???? ??
+        available_creatures = CREATURE_POOL
+        history = []
+
+    selected_creature = available_creatures[0]
+    current_episode = len(all_excluded) + 1
+
+    if selected_creature["name"] not in history:
         history.append(selected_creature["name"])
-        current_episode = len(history)
-
+        
     try:
         with open(HISTORY_FILE, "w", encoding="utf-8") as f:
             json.dump(history, f, ensure_ascii=False, indent=2)
     except Exception:
         pass
 
-    season = 1 if current_episode <= 30 else 2
     full_topic = f"Rescuing a lost {selected_creature['desc']} and tucking it into a cozy bed"
-    print(f"\n🎯 [배정] 에피소드 {current_episode}화 (시즌 {season}): {selected_creature['name']}")
     return full_topic, selected_creature["name"], selected_creature["desc"], current_episode
-
-
-TOPIC, CREATURE_NAME, CREATURE_DESC, CURRENT_EPISODE = resolve_unique_topic()
-
-
 def post_with_retry(url: str, json_data: dict, max_retries: int = 5) -> dict:
     for attempt in range(max_retries):
         try:
